@@ -1,0 +1,219 @@
+import React, { useState, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
+import { Printer, Download, FileText, GraduationCap } from 'lucide-react';
+import InvoiceForm from './components/InvoiceForm';
+import InvoicePreview from './components/InvoicePreview';
+import CourseManagement from './components/CourseManagement';
+import { Invoice, Item, Issuer, Language, issuers } from './types';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+type AppMode = 'invoicing' | 'courses';
+
+const App: React.FC = () => {
+  const [currentMode, setCurrentMode] = useState<AppMode>('invoicing');
+  const [invoice, setInvoice] = useState<Invoice>({
+    clientName: 'Fast Lane Consulting Services Latam',
+    clientNIT: '155596520-2-2015',
+    clientAddress: 'Punta Pacíf, Cll Isaac Hanono Missri. Ed Oceanía Business',
+    clientPhone: '(51) 991347214',
+    clientCity: 'Ciudad de Panamá, Panamá',
+    items: [],
+    total: 0,
+  });
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState(30);
+  const [selectedIssuer, setSelectedIssuer] = useState<Issuer>('colombia');
+  const [language, setLanguage] = useState<Language>('es');
+
+  const invoiceRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => invoiceRef.current,
+  });
+
+  const handleExportPDF = async () => {
+    if (invoiceRef.current) {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const margin = 40;
+
+      // Capturar el contenido HTML como una imagen
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        logging: false,
+        useCORS: true,
+      });
+      const imgData = canvas.toDataURL('image/png');
+
+      // Calcular las dimensiones para mantener la proporción
+      const imgWidth = pdfWidth - (2 * margin);
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // Añadir la imagen al PDF
+      pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
+
+      // Ajustar el tamaño del PDF si el contenido es más largo que una página
+      if (imgHeight > (pdfHeight - (2 * margin))) {
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', margin, -(pdfHeight - (2 * margin)), imgWidth, imgHeight);
+      }
+
+      // Generar el nombre del archivo
+      const filename = `Factura${invoiceNumber}.pdf`;
+      pdf.save(filename);
+    }
+  };
+
+  const updateInvoice = (updatedInvoice: Partial<Invoice>) => {
+    setInvoice((prev) => ({ ...prev, ...updatedInvoice }));
+  };
+
+  const addItem = (item: Item) => {
+    setInvoice((prev) => ({
+      ...prev,
+      items: [...prev.items, item],
+      total: prev.total + item.quantity * item.unitPrice,
+    }));
+  };
+
+  const editItem = (index: number, item: Item) => {
+    setInvoice((prev) => {
+      const newItems = [...prev.items];
+      newItems[index] = item;
+      const newTotal = newItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      return { ...prev, items: newItems, total: newTotal };
+    });
+  };
+
+  const deleteItem = (index: number) => {
+    setInvoice((prev) => {
+      const newItems = prev.items.filter((_, i) => i !== index);
+      const newTotal = newItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      return { ...prev, items: newItems, total: newTotal };
+    });
+  };
+
+  const renderContent = () => {
+    if (currentMode === 'courses') {
+      return <CourseManagement />;
+    }
+
+    return (
+      <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white shadow-md rounded-lg p-6">
+              <InvoiceForm
+                invoice={invoice}
+                updateInvoice={updateInvoice}
+                addItem={addItem}
+                editItem={editItem}
+                deleteItem={deleteItem}
+                selectedIssuer={selectedIssuer}
+                setSelectedIssuer={setSelectedIssuer}
+                invoiceNumber={invoiceNumber}
+                setInvoiceNumber={setInvoiceNumber}
+                paymentTerms={paymentTerms}
+                setPaymentTerms={setPaymentTerms}
+                language={language}
+                setLanguage={setLanguage}
+              />
+            </div>
+            <div className="bg-white shadow-md rounded-lg p-6">
+              <div ref={invoiceRef}>
+                <InvoicePreview
+                  invoice={invoice}
+                  invoiceNumber={invoiceNumber}
+                  paymentTerms={paymentTerms}
+                  selectedIssuer={selectedIssuer}
+                  language={language}
+                />
+              </div>
+              <div className="mt-4 flex justify-end space-x-4">
+                <button
+                  onClick={handlePrint}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded flex items-center"
+                >
+                  <Printer className="mr-2" size={20} />
+                  {language === 'es' ? 'Imprimir' : 'Print'}
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded flex items-center"
+                >
+                  <Download className="mr-2" size={20} />
+                  {language === 'es' ? 'PDF' : 'PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Navigation Header */}
+      <nav className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-bold text-gray-900">
+                Sistema de Gestión Profesional
+              </h1>
+            </div>
+            <div className="flex space-x-4">
+              <button
+                onClick={() => setCurrentMode('invoicing')}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentMode === 'invoicing'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <FileText className="mr-2" size={18} />
+                Facturación
+              </button>
+              <button
+                onClick={() => setCurrentMode('courses')}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentMode === 'courses'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <GraduationCap className="mr-2" size={18} />
+                Cursos
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Page Title */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <h2 className="text-2xl font-bold text-gray-900">
+            {currentMode === 'invoicing' 
+              ? (language === 'es' ? 'Facturación Profesional' : 'Professional Invoicing')
+              : 'Gestión de Cursos'
+            }
+          </h2>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      {renderContent()}
+    </div>
+  );
+};
+
+export default App;
