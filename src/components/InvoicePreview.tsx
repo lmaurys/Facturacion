@@ -48,8 +48,8 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
           <h3 className="text-sm font-bold mb-1">{t.issuerData}</h3>
           <p>{issuers[selectedIssuer].name}</p>
           <p>{issuers[selectedIssuer].nit}</p>
-          <p>{issuers[selectedIssuer].address}</p>
-          <p>{t.address}: {issuers[selectedIssuer].phone}</p>
+          <p>{t.address}: {issuers[selectedIssuer].address}</p>
+          <p>Tel: {issuers[selectedIssuer].phone}</p>
           <p>{issuers[selectedIssuer].city}</p>
           <p>{issuers[selectedIssuer].email}</p>
         </div>
@@ -57,8 +57,8 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
           <h3 className="text-sm font-bold mb-1">{t.clientData}</h3>
           <p>{invoice.clientName}</p>
           <p>NIT: {invoice.clientNIT}</p>
-          <p>{invoice.clientAddress}</p>
-          <p>{t.address}: {invoice.clientPhone}</p>
+          <p>{t.address}: {invoice.clientAddress}</p>
+          <p>Tel: {invoice.clientPhone}</p>
           <p>{invoice.clientCity}</p>
         </div>
       </div>

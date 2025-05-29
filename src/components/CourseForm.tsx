@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Course } from '../types';
+import { Course, Client } from '../types';
 import { X, Save, Plus } from 'lucide-react';
+import { loadClients } from '../utils/storage';
 
 interface CourseFormProps {
   course?: Course | null;
@@ -8,8 +9,6 @@ interface CourseFormProps {
   onCancel: () => void;
   isEditing: boolean;
 }
-
-const predefinedClients = ['FastLane', 'CAS Training', 'Otros'];
 
 const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEditing }) => {
   const [formData, setFormData] = useState<Omit<Course, 'id'>>({
@@ -19,25 +18,30 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     hours: 0,
     hourlyRate: 0,
     totalValue: 0,
-    client: '',
+    clientId: '',
     invoiceNumber: '',
     invoiceDate: '',
-    status: 'enviada',
+    status: 'creado',
     paymentDate: '',
     paidAmount: 0,
     observations: ''
   });
 
-  const [customClient, setCustomClient] = useState('');
-  const [isCustomClient, setIsCustomClient] = useState(false);
+  const [clients, setClients] = useState<Client[]>([]);
+
+  useEffect(() => {
+    // Cargar clientes al montar el componente
+    const loadClientsAsync = async () => {
+      const loadedClients = await loadClients();
+      setClients(loadedClients);
+    };
+    
+    loadClientsAsync();
+  }, []);
 
   useEffect(() => {
     if (course) {
       setFormData(course);
-      if (!predefinedClients.includes(course.client)) {
-        setIsCustomClient(true);
-        setCustomClient(course.client);
-      }
     }
   }, [course]);
 
@@ -55,21 +59,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     }));
   };
 
-  const handleClientChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    if (value === 'custom') {
-      setIsCustomClient(true);
-      setFormData(prev => ({ ...prev, client: customClient }));
-    } else {
-      setIsCustomClient(false);
-      setFormData(prev => ({ ...prev, client: value }));
-    }
-  };
-
-  const handleCustomClientChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setCustomClient(value);
-    setFormData(prev => ({ ...prev, client: value }));
+  const getClientName = (clientId: string): string => {
+    const client = clients.find(c => c.id === clientId);
+    return client ? client.name : '';
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -87,6 +79,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
           <button
             onClick={onCancel}
             className="text-gray-400 hover:text-gray-600"
+            title="Cerrar formulario"
           >
             <X size={24} />
           </button>
@@ -110,6 +103,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                   value={formData.courseName}
                   onChange={handleInputChange}
                   required
+                  title="Nombre del curso dictado"
+                  placeholder="Ej: Cisco CCNA Security"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -125,6 +120,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     value={formData.startDate}
                     onChange={handleInputChange}
                     required
+                    title="Fecha de inicio del curso"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -138,6 +134,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     value={formData.endDate}
                     onChange={handleInputChange}
                     required
+                    title="Fecha final del curso"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -156,6 +153,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     required
                     min="0"
                     step="0.5"
+                    title="Número total de horas del curso"
+                    placeholder="Ej: 40"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -171,6 +170,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     required
                     min="0"
                     step="0.01"
+                    title="Valor por hora del curso"
+                    placeholder="Ej: 150"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -183,6 +184,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     name="totalValue"
                     value={formData.totalValue}
                     readOnly
+                    title="Valor total calculado automáticamente"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
                   />
                 </div>
@@ -193,62 +195,31 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                   Cliente *
                 </label>
                 <select
-                  value={isCustomClient ? 'custom' : formData.client}
-                  onChange={handleClientChange}
+                  name="clientId"
+                  value={formData.clientId}
+                  onChange={handleInputChange}
                   required
+                  title="Seleccionar cliente para el curso"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Seleccionar cliente</option>
-                  {predefinedClients.map(client => (
-                    <option key={client} value={client}>{client}</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
                   ))}
-                  <option value="custom">Otro (especificar)</option>
                 </select>
-                {isCustomClient && (
-                  <input
-                    type="text"
-                    value={customClient}
-                    onChange={handleCustomClientChange}
-                    placeholder="Especificar cliente"
-                    required
-                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                {clients.length === 0 && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    No hay clientes registrados. Primero agrega clientes en la sección de Gestión de Clientes.
+                  </p>
                 )}
               </div>
             </div>
 
-            {/* Información de Facturación y Pago */}
+            {/* Estado y Observaciones */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-gray-900 border-b pb-2">
-                Facturación y Pago
+                Estado y Observaciones
               </h3>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Número de Factura
-                  </label>
-                  <input
-                    type="text"
-                    name="invoiceNumber"
-                    value={formData.invoiceNumber}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fecha de Factura
-                  </label>
-                  <input
-                    type="date"
-                    name="invoiceDate"
-                    value={formData.invoiceDate}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -259,14 +230,55 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                   value={formData.status}
                   onChange={handleInputChange}
                   required
+                  title="Estado actual del curso"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="enviada">Enviada</option>
-                  <option value="pagada">Pagada</option>
+                  <option value="creado">Creado</option>
+                  <option value="dictado">Dictado</option>
+                  <option value="facturado">Facturado</option>
+                  <option value="pagado">Pagado</option>
                 </select>
               </div>
 
-              {formData.status === 'pagada' && (
+              {/* Información de Facturación */}
+              {(formData.status === 'facturado' || formData.status === 'pagado') && (
+                <div className="border-t pt-4">
+                  <h4 className="text-md font-medium text-gray-900 mb-3">
+                    Información de Facturación
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Número de Factura
+                      </label>
+                      <input
+                        type="text"
+                        name="invoiceNumber"
+                        value={formData.invoiceNumber}
+                        onChange={handleInputChange}
+                        title="Número de la factura asociada"
+                        placeholder="Ej: LP115"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha de Factura
+                      </label>
+                      <input
+                        type="date"
+                        name="invoiceDate"
+                        value={formData.invoiceDate}
+                        onChange={handleInputChange}
+                        title="Fecha de emisión de la factura"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {formData.status === 'pagado' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -277,6 +289,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                       name="paymentDate"
                       value={formData.paymentDate}
                       onChange={handleInputChange}
+                      title="Fecha en que se recibió el pago"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -291,6 +304,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                       onChange={handleInputChange}
                       min="0"
                       step="0.01"
+                      title="Monto total recibido"
+                      placeholder="0.00"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>

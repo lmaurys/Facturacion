@@ -1,17 +1,25 @@
 import React, { useState, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Printer, Download, FileText, GraduationCap } from 'lucide-react';
+import { Printer, Download, FileText, GraduationCap, Building, Database, BarChart3 } from 'lucide-react';
 import InvoiceForm from './components/InvoiceForm';
 import InvoicePreview from './components/InvoicePreview';
 import CourseManagement from './components/CourseManagement';
-import { Invoice, Item, Issuer, Language, issuers } from './types';
+import ClientManagement from './components/ClientManagement';
+import InvoiceManagement from './components/InvoiceManagement';
+import DataManagement from './components/DataManagement';
+import InvoiceAnalytics from './components/InvoiceAnalytics';
+import InvoiceFromCourses from './components/InvoiceFromCourses';
+import { Invoice, Item, Issuer, Language, Client, InvoiceFromCourse, issuers } from './types';
+import { addInvoice, importAllData, loadClients } from './utils/storage';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-type AppMode = 'invoicing' | 'courses';
+type AppMode = 'invoicing' | 'courses' | 'clients' | 'invoices' | 'analytics' | 'data';
 
 const App: React.FC = () => {
   const [currentMode, setCurrentMode] = useState<AppMode>('invoicing');
+  const [showInvoiceFromCourses, setShowInvoiceFromCourses] = useState(false);
+  const [hasTriedAutoLoad, setHasTriedAutoLoad] = useState(false);
   const [invoice, setInvoice] = useState<Invoice>({
     clientName: 'Fast Lane Consulting Services Latam',
     clientNIT: '155596520-2-2015',
@@ -27,6 +35,38 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>('es');
 
   const invoiceRef = useRef<HTMLDivElement>(null);
+
+  // Intentar cargar datos predeterminados al inicio
+  React.useEffect(() => {
+    const tryAutoLoadData = async () => {
+      if (hasTriedAutoLoad) return;
+      
+      try {
+        // Verificar si ya hay clientes cargados
+        const existingClients = await loadClients();
+        if (existingClients.length > 0) {
+          setHasTriedAutoLoad(true);
+          return;
+        }
+
+        // Intentar cargar datos predeterminados
+        const response = await fetch('/data/sistema_datos.json');
+        if (response.ok) {
+          const jsonData = await response.text();
+          const success = await importAllData(jsonData);
+          if (success) {
+            console.log('Datos predeterminados cargados automáticamente');
+          }
+        }
+      } catch (error) {
+        console.log('No se pudieron cargar datos predeterminados:', error);
+      } finally {
+        setHasTriedAutoLoad(true);
+      }
+    };
+
+    tryAutoLoadData();
+  }, [hasTriedAutoLoad]);
 
   const handlePrint = useReactToPrint({
     content: () => invoiceRef.current,
@@ -100,9 +140,82 @@ const App: React.FC = () => {
     });
   };
 
+  const clearInvoice = () => {
+    if (window.confirm('¿Estás seguro de que quieres limpiar toda la factura?')) {
+      setInvoice({
+        clientName: '',
+        clientNIT: '',
+        clientAddress: '',
+        clientPhone: '',
+        clientCity: '',
+        items: [],
+        total: 0,
+      });
+      setInvoiceNumber('');
+    }
+  };
+
+  const handleGenerateInvoiceFromCourses = async (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string) => {
+    const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    
+    // Crear y guardar la factura en la base de datos
+    const invoiceData: Omit<InvoiceFromCourse, 'id'> = {
+      clientId: clientData.id,
+      courseIds: courseIds,
+      invoiceNumber: invoiceNumber,
+      invoiceDate: new Date().toISOString().split('T')[0],
+      issuer: selectedIssuer,
+      language: language,
+      paymentTerms: paymentTerms,
+      subtotal: total,
+      total: total,
+      status: 'draft',
+      observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`
+    };
+
+    try {
+      const savedInvoice = await addInvoice(invoiceData);
+      if (savedInvoice) {
+        console.log('Factura guardada exitosamente:', savedInvoice);
+      }
+    } catch (error) {
+      console.error('Error guardando factura:', error);
+    }
+    
+    // Actualizar el formulario de facturación tradicional
+    setInvoice({
+      clientName: clientData.name,
+      clientNIT: clientData.nit,
+      clientAddress: clientData.address,
+      clientPhone: clientData.phone,
+      clientCity: clientData.city,
+      items,
+      total
+    });
+    
+    setShowInvoiceFromCourses(false);
+    setCurrentMode('invoicing');
+  };
+
   const renderContent = () => {
     if (currentMode === 'courses') {
       return <CourseManagement />;
+    }
+    
+    if (currentMode === 'clients') {
+      return <ClientManagement />;
+    }
+
+    if (currentMode === 'invoices') {
+      return <InvoiceManagement />;
+    }
+
+    if (currentMode === 'analytics') {
+      return <InvoiceAnalytics />;
+    }
+
+    if (currentMode === 'data') {
+      return <DataManagement onDataImported={() => console.log('Data imported')} />;
     }
 
     return (
@@ -124,6 +237,8 @@ const App: React.FC = () => {
                 setPaymentTerms={setPaymentTerms}
                 language={language}
                 setLanguage={setLanguage}
+                onGenerateFromCourses={() => setShowInvoiceFromCourses(true)}
+                onClearInvoice={clearInvoice}
               />
             </div>
             <div className="bg-white shadow-md rounded-lg p-6">
@@ -172,15 +287,15 @@ const App: React.FC = () => {
             </div>
             <div className="flex space-x-4">
               <button
-                onClick={() => setCurrentMode('invoicing')}
+                onClick={() => setCurrentMode('clients')}
                 className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentMode === 'invoicing'
+                  currentMode === 'clients'
                     ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 }`}
               >
-                <FileText className="mr-2" size={18} />
-                Facturación
+                <Building className="mr-2" size={18} />
+                Clientes
               </button>
               <button
                 onClick={() => setCurrentMode('courses')}
@@ -193,6 +308,50 @@ const App: React.FC = () => {
                 <GraduationCap className="mr-2" size={18} />
                 Cursos
               </button>
+              <button
+                onClick={() => setCurrentMode('invoicing')}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentMode === 'invoicing'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <FileText className="mr-2" size={18} />
+                Facturación
+              </button>
+              <button
+                onClick={() => setCurrentMode('invoices')}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentMode === 'invoices'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <FileText className="mr-2" size={18} />
+                Facturas
+              </button>
+              <button
+                onClick={() => setCurrentMode('analytics')}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentMode === 'analytics'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <BarChart3 className="mr-2" size={18} />
+                Análisis
+              </button>
+              <button
+                onClick={() => setCurrentMode('data')}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentMode === 'data'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <Database className="mr-2" size={18} />
+                Datos
+              </button>
             </div>
           </div>
         </div>
@@ -202,9 +361,17 @@ const App: React.FC = () => {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <h2 className="text-2xl font-bold text-gray-900">
-            {currentMode === 'invoicing' 
+            {currentMode === 'clients'
+              ? 'Gestión de Clientes'
+              : currentMode === 'courses'
+              ? 'Gestión de Cursos'
+              : currentMode === 'invoicing' 
               ? (language === 'es' ? 'Facturación Profesional' : 'Professional Invoicing')
-              : 'Gestión de Cursos'
+              : currentMode === 'invoices'
+              ? 'Gestión de Facturas'
+              : currentMode === 'analytics'
+              ? 'Análisis de Facturación'
+              : 'Gestión Central de Datos'
             }
           </h2>
         </div>
@@ -212,6 +379,14 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       {renderContent()}
+
+      {/* Modal para generar factura desde cursos */}
+      {showInvoiceFromCourses && (
+        <InvoiceFromCourses
+          onGenerateInvoice={handleGenerateInvoiceFromCourses}
+          onClose={() => setShowInvoiceFromCourses(false)}
+        />
+      )}
     </div>
   );
 };

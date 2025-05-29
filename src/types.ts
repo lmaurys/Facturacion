@@ -22,13 +22,39 @@ export interface Course {
   hours: number;
   hourlyRate: number;
   totalValue: number;
-  client: string;
+  clientId: string; // Ahora referencia al ID del cliente
   invoiceNumber: string;
   invoiceDate: string;
-  status: 'enviada' | 'pagada';
+  status: 'creado' | 'dictado' | 'facturado' | 'pagado';
   paymentDate: string;
   paidAmount: number;
   observations: string;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  nit: string;
+  address: string;
+  phone: string;
+  city: string;
+  email?: string;
+  observations?: string;
+}
+
+export interface InvoiceFromCourse {
+  id: string;
+  clientId: string;
+  courseIds: string[]; // Cursos incluidos en esta factura
+  invoiceNumber: string;
+  invoiceDate: string;
+  issuer: Issuer;
+  language: Language;
+  paymentTerms: number;
+  subtotal: number;
+  total: number;
+  status: 'draft' | 'sent' | 'paid';
+  observations?: string;
 }
 
 export type Issuer = 'colombia' | 'usa';

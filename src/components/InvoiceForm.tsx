@@ -15,6 +15,8 @@ interface InvoiceFormProps {
   setPaymentTerms: (terms: number) => void;
   language: Language;
   setLanguage: (lang: Language) => void;
+  onGenerateFromCourses?: () => void;
+  onClearInvoice?: () => void;
 }
 
 const InvoiceForm: React.FC<InvoiceFormProps> = ({
@@ -31,6 +33,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
   setPaymentTerms,
   language,
   setLanguage,
+  onGenerateFromCourses,
+  onClearInvoice,
 }) => {
   const [newItem, setNewItem] = useState<Item>({
     description: '',
@@ -105,14 +109,15 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700" htmlFor="invoiceNumber">
-            {language === 'es' ? 'Número de Factura' : 'Invoice Number'}
+            {language === 'es' ? 'Número de Factura (Automático)' : 'Invoice Number (Automatic)'}
           </label>
           <input
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-50"
             id="invoiceNumber"
             type="text"
-            value={invoiceNumber}
-            onChange={(e) => setInvoiceNumber(e.target.value)}
+            value={invoiceNumber || 'Se asignará automáticamente'}
+            readOnly
+            title="El número de factura se asigna automáticamente"
           />
         </div>
         <div>
@@ -198,7 +203,29 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
         </div>
       </div>
 
-      <h2 className="text-xl font-semibold mt-8 mb-4">{language === 'es' ? 'Agregar Item' : 'Add Item'}</h2>
+      <div className="flex justify-between items-center mt-8 mb-4">
+        <h2 className="text-xl font-semibold">{language === 'es' ? 'Agregar Item' : 'Add Item'}</h2>
+        <div className="flex space-x-2">
+          {onClearInvoice && (
+            <button
+              onClick={onClearInvoice}
+              className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              type="button"
+            >
+              {language === 'es' ? 'Limpiar Factura' : 'Clear Invoice'}
+            </button>
+          )}
+          {onGenerateFromCourses && (
+            <button
+              onClick={onGenerateFromCourses}
+              className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              type="button"
+            >
+              {language === 'es' ? 'Generar desde Cursos' : 'Generate from Courses'}
+            </button>
+          )}
+        </div>
+      </div>
       <form onSubmit={handleAddItem} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700" htmlFor="description">
