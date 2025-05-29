@@ -38,6 +38,28 @@ const DataManagement: React.FC<DataManagementProps> = ({ onDataImported }) => {
     }
   };
 
+  const handleExportToSystemFile = async () => {
+    try {
+      setIsLoading(true);
+      const jsonData = await exportAllData();
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sistema_datos.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showMessage('success', 'Archivo sistema_datos.json descargado. Puedes reemplazar el archivo en public/data/');
+    } catch (error) {
+      console.error('Error exporting system file:', error);
+      showMessage('error', 'Error al exportar el archivo del sistema');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleImportData = () => {
     fileInputRef.current?.click();
   };
@@ -125,7 +147,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ onDataImported }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Exportar Datos */}
         <div className="border border-gray-200 rounded-lg p-4">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
@@ -146,6 +168,29 @@ const DataManagement: React.FC<DataManagementProps> = ({ onDataImported }) => {
               <Download className="mr-2" size={16} />
             )}
             Exportar Todo
+          </button>
+        </div>
+
+        {/* Exportar a sistema_datos.json */}
+        <div className="border border-gray-200 rounded-lg p-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+            <Download className="mr-2" size={18} />
+            Exportar a sistema_datos.json
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Exporta los datos del sistema en un archivo sistema_datos.json.
+          </p>
+          <button
+            onClick={handleExportToSystemFile}
+            disabled={isLoading}
+            className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded flex items-center justify-center"
+          >
+            {isLoading ? (
+              <RefreshCw className="mr-2 animate-spin" size={16} />
+            ) : (
+              <Download className="mr-2" size={16} />
+            )}
+            Exportar a sistema_datos.json
           </button>
         </div>
 
@@ -213,8 +258,18 @@ const DataManagement: React.FC<DataManagementProps> = ({ onDataImported }) => {
           <li>• Los datos exportados incluyen toda la información: clientes, cursos y facturas</li>
           <li>• Al importar, se reemplazarán todos los datos existentes</li>
           <li>• Se recomienda exportar regularmente como respaldo</li>
+          <li>• <strong>sistema_datos.json:</strong> Descarga el archivo con el nombre correcto para reemplazar en <code>/public/data/</code></li>
           <li>• Los datos predeterminados se cargan desde <code>/data/sistema_datos.json</code></li>
         </ul>
+        
+        <div className="mt-4 p-3 bg-blue-50 rounded-md">
+          <h5 className="font-semibold text-blue-900 mb-1">💡 Cómo actualizar sistema_datos.json:</h5>
+          <ol className="text-sm text-blue-800 space-y-1">
+            <li>1. Haz clic en "Exportar a sistema_datos.json"</li>
+            <li>2. Reemplaza el archivo descargado en la carpeta <code>public/data/</code></li>
+            <li>3. Los nuevos usuarios cargarán automáticamente estos datos</li>
+          </ol>
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,96 @@
 {
   "courses": [
     {
+      "courseName": "DP100",
+      "startDate": "2025-06-23",
+      "endDate": "2025-07-03",
+      "hours": 24,
+      "hourlyRate": 50,
+      "totalValue": 1200,
+      "clientId": "client_default_2",
+      "invoiceNumber": "",
+      "invoiceDate": "",
+      "status": "creado",
+      "paymentDate": "",
+      "paidAmount": 0,
+      "observations": "",
+      "id": "course_1748380705468_8k4f7zxj9",
+      "createdAt": "2025-05-27T21:18:25.468Z",
+      "updatedAt": "2025-05-27T21:18:25.468Z"
+    },
+    {
+      "courseName": "workshop de Build and Modernize",
+      "startDate": "2025-06-10",
+      "endDate": "2025-06-13",
+      "hours": 16,
+      "hourlyRate": 50,
+      "totalValue": 800,
+      "clientId": "client_default_3",
+      "invoiceNumber": "",
+      "invoiceDate": "",
+      "status": "creado",
+      "paymentDate": "",
+      "paidAmount": 0,
+      "observations": "",
+      "id": "course_1748380640929_7nr5mvpv7",
+      "createdAt": "2025-05-27T21:17:20.929Z",
+      "updatedAt": "2025-05-27T21:17:20.929Z"
+    },
+    {
+      "courseName": "DP600",
+      "startDate": "2025-06-02",
+      "endDate": "2025-06-11",
+      "hours": 24,
+      "hourlyRate": 50,
+      "totalValue": 1200,
+      "clientId": "client_default_2",
+      "invoiceNumber": "",
+      "invoiceDate": "",
+      "status": "creado",
+      "paymentDate": "",
+      "paidAmount": 0,
+      "observations": "",
+      "id": "course_1748380597373_672k1lcf4",
+      "createdAt": "2025-05-27T21:16:37.373Z",
+      "updatedAt": "2025-05-27T21:16:37.373Z"
+    },
+    {
+      "courseName": "AZ204",
+      "startDate": "2025-06-09",
+      "endDate": "2025-06-13",
+      "hours": 30,
+      "hourlyRate": 50,
+      "totalValue": 1500,
+      "clientId": "client_default_2",
+      "invoiceNumber": "",
+      "invoiceDate": "",
+      "status": "creado",
+      "paymentDate": "",
+      "paidAmount": 0,
+      "observations": "",
+      "id": "course_1748380499513_trk0ll6fg",
+      "createdAt": "2025-05-27T21:14:59.513Z",
+      "updatedAt": "2025-05-27T21:14:59.513Z"
+    },
+    {
+      "courseName": "MS102",
+      "startDate": "2025-06-02",
+      "endDate": "2025-06-06",
+      "hours": 40,
+      "hourlyRate": 50,
+      "totalValue": 2000,
+      "clientId": "client_default_3",
+      "invoiceNumber": "",
+      "invoiceDate": "",
+      "status": "creado",
+      "paymentDate": "",
+      "paidAmount": 0,
+      "observations": "",
+      "id": "course_1748380415587_4gmfks3ta",
+      "createdAt": "2025-05-27T21:13:35.587Z",
+      "updatedAt": "2025-05-27T21:13:35.587Z"
+    },
+    {
       "courseName": "Boost Innovation with Copilot for Dynamics 365 and Power Platform / 4 Hours LiveSession",
       "startDate": "2025-05-05",
       "endDate": "2025-05-07",
@@ -49,10 +139,10 @@
       "status": "dictado",
       "paymentDate": "",
       "paidAmount": 0,
-      "observations": "",
+      "observations": "APOYO DE JUAN 50%",
       "id": "course_1748378252053_8zf5hzs6s",
       "createdAt": "2025-05-27T20:37:32.053Z",
-      "updatedAt": "2025-05-27T20:37:32.053Z"
+      "updatedAt": "2025-05-29T10:10:09.642Z"
     },
     {
       "courseName": "DP700",
@@ -739,6 +829,6 @@
       "updatedAt": "2025-05-27T20:02:57.145Z"
     }
   ],
-  "exportDate": "2025-05-27T21:11:05.374Z",
+  "exportDate": "2025-05-29T10:19:08.933Z",
   "version": 2
 }
