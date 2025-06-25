@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { InvoiceFromCourse, Client, Course } from '../types';
-import { Edit2, Trash2, Plus, Calendar, DollarSign, Eye, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { loadClients, loadCourses } from '../utils/storage';
+import { loadClients, loadCourses, updateInvoice } from '../utils/storage';
+import { 
+  Eye, 
+  Edit2, 
+  Trash2, 
+  Plus, 
+  Search, 
+  ArrowUpDown, 
+  ArrowUp, 
+  ArrowDown,
+  Send,
+  DollarSign,
+  FileText,
+  Calendar,
+  Filter
+} from 'lucide-react';
 import { formatDate } from '../utils/dateUtils';
 
 interface InvoiceListProps {
@@ -76,6 +90,57 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     if (status === 'paid') return 'Pagada';
     if (status === 'sent') return 'Enviada';
     return 'Borrador';
+  };
+
+  const handleQuickStatusChange = async (invoice: InvoiceFromCourse, newStatus: 'draft' | 'sent' | 'paid') => {
+    try {
+      const updatedInvoice = await updateInvoice(invoice.id, {
+        ...invoice,
+        status: newStatus
+      });
+
+      if (updatedInvoice) {
+        // Recargar la página para refrescar los datos
+        window.location.reload();
+      } else {
+        alert('Error al actualizar el estado de la factura');
+      }
+    } catch (error) {
+      console.error('Error updating invoice status:', error);
+      alert('Error al actualizar el estado de la factura');
+    }
+  };
+
+  const getQuickActionButtons = (invoice: InvoiceFromCourse) => {
+    const buttons = [];
+    
+    if (invoice.status === 'draft') {
+      buttons.push(
+        <button
+          key="send"
+          onClick={() => handleQuickStatusChange(invoice, 'sent')}
+          className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
+          title="Marcar como enviada"
+        >
+          <Send size={14} />
+        </button>
+      );
+    }
+    
+    if (invoice.status === 'draft' || invoice.status === 'sent') {
+      buttons.push(
+        <button
+          key="paid"
+          onClick={() => handleQuickStatusChange(invoice, 'paid')}
+          className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"
+          title="Marcar como pagada"
+        >
+          <DollarSign size={14} />
+        </button>
+      );
+    }
+    
+    return buttons;
   };
 
   const handleSort = (key: SortKey) => {
@@ -170,6 +235,25 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
           <Plus className="mr-2" size={20} />
           Nueva Factura
         </button>
+      </div>
+
+      {/* Información sobre acciones rápidas */}
+      <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+        <h4 className="font-semibold text-blue-900 mb-2">💡 Acciones Rápidas:</h4>
+        <div className="text-sm text-blue-800 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="flex items-center">
+            <Send size={14} className="mr-2" />
+            <span>Marcar como enviada</span>
+          </div>
+          <div className="flex items-center">
+            <DollarSign size={14} className="mr-2" />
+            <span>Marcar como pagada</span>
+          </div>
+          <div className="flex items-center">
+            <Edit2 size={14} className="mr-2" />
+            <span>Editar factura completa</span>
+          </div>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -370,6 +454,15 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                     </td>
                     <td className="px-3 py-4 text-right">
                       <div className="flex justify-end space-x-1">
+                        {/* Botones de acción rápida para cambio de estado */}
+                        {getQuickActionButtons(invoice)}
+                        
+                        {/* Separador visual si hay botones de estado */}
+                        {getQuickActionButtons(invoice).length > 0 && (
+                          <div className="w-px h-6 bg-gray-300 mx-1"></div>
+                        )}
+                        
+                        {/* Botones de acción estándar */}
                         <button
                           onClick={() => onView(invoice)}
                           className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"

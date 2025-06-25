@@ -1,4 +1,5 @@
 import { Course, Client, InvoiceFromCourse } from '../types';
+import { SyncData, syncWithAzure, saveDataToAzure, loadDataFromAzure, saveDataToAzureAlternative } from './azureBlobSync';
 
 const DB_NAME = 'FacturacionDB';
 const DB_VERSION = 2; // Incrementamos la versión para la nueva estructura
@@ -618,5 +619,120 @@ export const getInvoiceByIdFromDB = async (invoiceId: string): Promise<InvoiceFr
   } catch (error) {
     console.error('Error getting invoice from IndexedDB:', error);
     return null;
+  }
+};
+
+// ========================= AZURE SYNC =========================
+
+/**
+ * Exportar datos y sincronizar con Azure Blob Storage
+ */
+export const exportAndSyncToAzure = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    console.log('Iniciando exportación y sincronización con Azure...');
+    
+    // Obtener datos locales
+    const [courses, clients, invoices] = await Promise.all([
+      loadCoursesFromDB(),
+      loadClientsFromDB(),
+      loadInvoicesFromDB()
+    ]);
+
+    const syncData: SyncData = {
+      courses,
+      clients,
+      invoices,
+      exportDate: new Date().toISOString(),
+      version: DB_VERSION
+    };
+
+    // Intentar sincronizar con Azure
+    const syncSuccess = await syncWithAzure(syncData);
+    
+    if (syncSuccess) {
+      return {
+        success: true,
+        message: 'Datos sincronizados exitosamente con Azure Blob Storage'
+      };
+    } else {
+      // Intentar método alternativo
+      const altSuccess = await saveDataToAzureAlternative(syncData);
+      if (altSuccess) {
+        return {
+          success: true,
+          message: 'Datos sincronizados exitosamente con Azure (método alternativo)'
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Error al sincronizar con Azure Blob Storage'
+        };
+      }
+    }
+  } catch (error) {
+    console.error('Error en exportación y sincronización:', error);
+    return {
+      success: false,
+      message: `Error: ${error instanceof Error ? error.message : 'Error desconocido'}`
+    };
+  }
+};
+
+/**
+ * Cargar datos desde Azure Blob Storage e importarlos localmente
+ */
+export const loadAndImportFromAzure = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    console.log('Cargando datos desde Azure Blob Storage...');
+    
+    const remoteData = await loadDataFromAzure();
+    
+    if (!remoteData) {
+      return {
+        success: false,
+        message: 'No se encontraron datos en Azure Blob Storage'
+      };
+    }
+
+    // Importar datos remotos
+    const jsonData = JSON.stringify(remoteData);
+    const importSuccess = await importAllDataFromJSON(jsonData);
+    
+    if (importSuccess) {
+      return {
+        success: true,
+        message: 'Datos importados exitosamente desde Azure Blob Storage'
+      };
+    } else {
+      return {
+        success: false,
+        message: 'Error al importar datos desde Azure Blob Storage'
+      };
+    }
+  } catch (error) {
+    console.error('Error en carga e importación:', error);
+    return {
+      success: false,
+      message: `Error: ${error instanceof Error ? error.message : 'Error desconocido'}`
+    };
+  }
+};
+
+/**
+ * Función de sincronización automática que se ejecuta en segundo plano
+ */
+export const autoSyncWithAzure = async (): Promise<void> => {
+  try {
+    console.log('Sincronización automática con Azure iniciada...');
+    
+    const result = await exportAndSyncToAzure();
+    
+    if (result.success) {
+      console.log('✅ Sincronización automática exitosa:', result.message);
+    } else {
+      console.warn('⚠️ Sincronización automática falló:', result.message);
+    }
+  } catch (error) {
+    console.error('❌ Error en sincronización automática:', error);
   }
 }; 

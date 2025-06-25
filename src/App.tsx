@@ -10,7 +10,7 @@ import DataManagement from './components/DataManagement';
 import InvoiceAnalytics from './components/InvoiceAnalytics';
 import InvoiceFromCourses from './components/InvoiceFromCourses';
 import { Invoice, Item, Issuer, Language, Client, InvoiceFromCourse, issuers } from './types';
-import { addInvoice, importAllData, loadClients } from './utils/storage';
+import { addInvoice, loadClients, initializeAutoSync, initializeFromAzure } from './utils/storage';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -36,37 +36,45 @@ const App: React.FC = () => {
 
   const invoiceRef = useRef<HTMLDivElement>(null);
 
-  // Intentar cargar datos predeterminados al inicio
+  // Cargar datos automáticamente desde Azure al inicio
   React.useEffect(() => {
-    const tryAutoLoadData = async () => {
+    const initializeApp = async () => {
       if (hasTriedAutoLoad) return;
       
       try {
-        // Verificar si ya hay clientes cargados
-        const existingClients = await loadClients();
-        if (existingClients.length > 0) {
-          setHasTriedAutoLoad(true);
-          return;
+        console.log('🚀 Inicializando aplicación con Azure Blob Storage...');
+        
+        // Cargar datos desde Azure (única fuente de verdad)
+        const success = await initializeFromAzure();
+        
+        if (success) {
+          console.log('✅ Aplicación inicializada desde Azure exitosamente');
+        } else {
+          console.log('⚠️ Error inicializando desde Azure, continuando con datos vacíos');
         }
-
-        // Intentar cargar datos predeterminados
-        const response = await fetch('/data/sistema_datos.json');
-        if (response.ok) {
-          const jsonData = await response.text();
-          const success = await importAllData(jsonData);
-          if (success) {
-            console.log('Datos predeterminados cargados automáticamente');
-          }
-        }
+        
+        setHasTriedAutoLoad(true);
       } catch (error) {
-        console.log('No se pudieron cargar datos predeterminados:', error);
-      } finally {
+        console.error('❌ Error durante inicialización:', error);
         setHasTriedAutoLoad(true);
       }
     };
 
-    tryAutoLoadData();
+    initializeApp();
   }, [hasTriedAutoLoad]);
+
+  // Inicializar sincronización automática con Azure
+  React.useEffect(() => {
+    // Esperar un poco para que la inicialización termine
+    const timer = setTimeout(() => {
+      console.log('🔄 Iniciando sincronización automática cada 15 minutos...');
+      initializeAutoSync(15);
+    }, 3000);
+    
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   const handlePrint = useReactToPrint({
     content: () => invoiceRef.current,

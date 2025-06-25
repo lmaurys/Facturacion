@@ -1,276 +1,151 @@
-import React, { useState, useRef } from 'react';
-import { Download, Upload, Database, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
-import { exportAllData, importAllData } from '../utils/storage';
+import React, { useState, useEffect } from 'react';
+import { Cloud, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface DataManagementProps {
   onDataImported?: () => void;
 }
 
 const DataManagement: React.FC<DataManagementProps> = ({ onDataImported }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [message, setMessage] = useState<string>('');
 
-  const showMessage = (type: 'success' | 'error' | 'info', text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
+  useEffect(() => {
+    // Obtener el último timestamp de sincronización
+    const lastSyncTime = localStorage.getItem('lastAzureSync');
+    if (lastSyncTime) {
+      setLastSync(new Date(lastSyncTime).toLocaleString());
+    }
 
-  const handleExportData = async () => {
-    try {
-      setIsLoading(true);
-      const jsonData = await exportAllData();
-      const blob = new Blob([jsonData], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sistema_gestion_completo_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showMessage('success', 'Datos exportados exitosamente');
-    } catch (error) {
-      console.error('Error exporting data:', error);
-      showMessage('error', 'Error al exportar los datos');
-    } finally {
-      setIsLoading(false);
+    // Escuchar eventos de sincronización
+    const handleSyncStart = () => {
+      setSyncStatus('syncing');
+      setMessage('Sincronizando con Azure Blob Storage...');
+    };
+
+    const handleSyncSuccess = () => {
+      setSyncStatus('success');
+      setMessage('Sincronización exitosa con Azure');
+      setLastSync(new Date().toLocaleString());
+      localStorage.setItem('lastAzureSync', new Date().toISOString());
+    };
+
+    const handleSyncError = () => {
+      setSyncStatus('error');
+      setMessage('Error en la sincronización con Azure');
+    };
+
+    // Escuchar eventos personalizados de sincronización
+    window.addEventListener('azureSyncStart', handleSyncStart);
+    window.addEventListener('azureSyncSuccess', handleSyncSuccess);
+    window.addEventListener('azureSyncError', handleSyncError);
+
+    return () => {
+      window.removeEventListener('azureSyncStart', handleSyncStart);
+      window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
+      window.removeEventListener('azureSyncError', handleSyncError);
+    };
+  }, []);
+
+  const getStatusColor = () => {
+    switch (syncStatus) {
+      case 'syncing': return 'text-blue-600';
+      case 'success': return 'text-green-600';
+      case 'error': return 'text-red-600';
+      default: return 'text-gray-600';
     }
   };
 
-  const handleExportToSystemFile = async () => {
-    try {
-      setIsLoading(true);
-      const jsonData = await exportAllData();
-      const blob = new Blob([jsonData], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'sistema_datos.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showMessage('success', 'Archivo sistema_datos.json descargado. Puedes reemplazar el archivo en public/data/');
-    } catch (error) {
-      console.error('Error exporting system file:', error);
-      showMessage('error', 'Error al exportar el archivo del sistema');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleImportData = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsLoading(true);
-      showMessage('info', 'Importando datos...');
-      
-      const text = await file.text();
-      const success = await importAllData(text);
-      
-      if (success) {
-        showMessage('success', 'Datos importados exitosamente. La página se actualizará.');
-        onDataImported && onDataImported();
-        // Recargar la página para refrescar todos los datos
-        setTimeout(() => window.location.reload(), 2000);
-      } else {
-        showMessage('error', 'Error al importar los datos. Verifica que el archivo sea válido.');
-      }
-    } catch (error) {
-      console.error('Error importing data:', error);
-      showMessage('error', 'Error al leer el archivo. Verifica que sea un JSON válido.');
-    } finally {
-      setIsLoading(false);
-      // Limpiar el input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const tryAutoLoadData = async () => {
-    try {
-      setIsLoading(true);
-      showMessage('info', 'Intentando cargar datos predeterminados...');
-      
-      // Intentar cargar desde una ubicación predeterminada
-      // Por ejemplo, desde public/data/sistema_datos.json
-      const response = await fetch('/data/sistema_datos.json');
-      
-      if (response.ok) {
-        const jsonData = await response.text();
-        const success = await importAllData(jsonData);
-        
-        if (success) {
-          showMessage('success', 'Datos predeterminados cargados exitosamente');
-          onDataImported && onDataImported();
-          setTimeout(() => window.location.reload(), 2000);
-        } else {
-          showMessage('error', 'Error al procesar los datos predeterminados');
-        }
-      } else {
-        showMessage('info', 'No se encontraron datos predeterminados para cargar');
-      }
-    } catch (error) {
-      console.error('Error loading default data:', error);
-      showMessage('info', 'No se pudieron cargar datos predeterminados');
-    } finally {
-      setIsLoading(false);
+  const getStatusIcon = () => {
+    switch (syncStatus) {
+      case 'syncing': return <RefreshCw className="animate-spin" size={20} />;
+      case 'success': return <CheckCircle size={20} />;
+      case 'error': return <AlertCircle size={20} />;
+      default: return <Cloud size={20} />;
     }
   };
 
   return (
     <div className="bg-white shadow-md rounded-lg p-6">
       <div className="flex items-center mb-6">
-        <Database className="mr-3" size={24} />
-        <h2 className="text-2xl font-bold text-gray-900">Gestión Central de Datos</h2>
+        <Cloud className="mr-3 text-blue-600" size={24} />
+        <h2 className="text-2xl font-bold text-gray-900">Sistema de Persistencia Azure</h2>
       </div>
 
-      {/* Mensajes */}
-      {message && (
-        <div className={`mb-4 p-4 rounded-md flex items-center ${
-          message.type === 'success' ? 'bg-green-50 text-green-800' :
-          message.type === 'error' ? 'bg-red-50 text-red-800' :
-          'bg-blue-50 text-blue-800'
-        }`}>
-          {message.type === 'success' && <CheckCircle className="mr-2" size={16} />}
-          {message.type === 'error' && <AlertCircle className="mr-2" size={16} />}
-          {message.type === 'info' && <RefreshCw className="mr-2" size={16} />}
-          {message.text}
+      {/* Estado de Sincronización */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <div className={`mr-3 ${getStatusColor()}`}>
+              {getStatusIcon()}
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Estado de Sincronización</h3>
+              <p className={`text-sm ${getStatusColor()}`}>{message || 'Esperando sincronización...'}</p>
+            </div>
+          </div>
+          {syncStatus === 'success' && (
+            <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
+              Sincronizado
+            </div>
+          )}
+          {syncStatus === 'error' && (
+            <div className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
+              Error
+            </div>
+          )}
+        </div>
+        
+        {lastSync && (
+          <p className="text-sm text-gray-600">
+            <strong>Última sincronización:</strong> {lastSync}
+          </p>
+        )}
+      </div>
+
+      {/* Información del Sistema */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-blue-50 rounded-lg p-4">
+          <h4 className="text-md font-semibold text-blue-900 mb-2">🔄 Sincronización Automática</h4>
+          <ul className="text-sm text-blue-800 space-y-1">
+            <li>• <strong>Carga inicial:</strong> Al abrir la aplicación</li>
+            <li>• <strong>Sincronización:</strong> Cada 15 minutos automáticamente</li>
+            <li>• <strong>Guardar cambios:</strong> Automático al crear/editar/eliminar</li>
+            <li>• <strong>Fuente única:</strong> Azure Blob Storage</li>
+          </ul>
+        </div>
+
+        <div className="bg-green-50 rounded-lg p-4">
+          <h4 className="text-md font-semibold text-green-900 mb-2">📊 Información de Datos</h4>
+          <ul className="text-sm text-green-800 space-y-1">
+            <li>• <strong>Storage:</strong> Azure Blob Storage</li>
+            <li>• <strong>Container:</strong> capacitaciones</li>
+            <li>• <strong>Archivo:</strong>sistema_gestion_completo.json</li>
+            <li>• <strong>Autenticación:</strong> SAS Token</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Nota Importante */}
+      <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
+        <h4 className="font-semibold text-yellow-900 mb-2">💡 Sistema Completamente Automatizado</h4>
+        <p className="text-sm text-yellow-800">
+          Este sistema ahora funciona completamente de forma automática. No necesitas realizar ninguna acción manual.
+          Todos los datos se sincronizan automáticamente con Azure Blob Storage.
+        </p>
+      </div>
+
+      {/* Debug Info (solo en desarrollo) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+          <h5 className="font-semibold text-gray-900 mb-2">🔧 Información de Debug:</h5>
+          <div className="text-sm text-gray-600 space-y-1">
+            <p><strong>Estado actual:</strong> {syncStatus}</p>
+            <p><strong>Mensaje:</strong> {message || 'Sin mensaje'}</p>
+            <p><strong>Última sync:</strong> {lastSync || 'Nunca'}</p>
+          </div>
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Exportar Datos */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-            <Download className="mr-2" size={18} />
-            Exportar Datos
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Exporta todos los datos del sistema (clientes, cursos, facturas) en un archivo JSON.
-          </p>
-          <button
-            onClick={handleExportData}
-            disabled={isLoading}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded flex items-center justify-center"
-          >
-            {isLoading ? (
-              <RefreshCw className="mr-2 animate-spin" size={16} />
-            ) : (
-              <Download className="mr-2" size={16} />
-            )}
-            Exportar Todo
-          </button>
-        </div>
-
-        {/* Exportar a sistema_datos.json */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-            <Download className="mr-2" size={18} />
-            Exportar a sistema_datos.json
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Exporta los datos del sistema en un archivo sistema_datos.json.
-          </p>
-          <button
-            onClick={handleExportToSystemFile}
-            disabled={isLoading}
-            className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded flex items-center justify-center"
-          >
-            {isLoading ? (
-              <RefreshCw className="mr-2 animate-spin" size={16} />
-            ) : (
-              <Download className="mr-2" size={16} />
-            )}
-            Exportar a sistema_datos.json
-          </button>
-        </div>
-
-        {/* Importar Datos */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-            <Upload className="mr-2" size={18} />
-            Importar Datos
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Importa datos desde un archivo JSON previamente exportado.
-          </p>
-          <button
-            onClick={handleImportData}
-            disabled={isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded flex items-center justify-center"
-          >
-            {isLoading ? (
-              <RefreshCw className="mr-2 animate-spin" size={16} />
-            ) : (
-              <Upload className="mr-2" size={16} />
-            )}
-            Importar Datos
-          </button>
-        </div>
-
-        {/* Cargar Datos Predeterminados */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-            <RefreshCw className="mr-2" size={18} />
-            Datos Predeterminados
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Intenta cargar datos predeterminados desde la aplicación.
-          </p>
-          <button
-            onClick={tryAutoLoadData}
-            disabled={isLoading}
-            className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded flex items-center justify-center"
-          >
-            {isLoading ? (
-              <RefreshCw className="mr-2 animate-spin" size={16} />
-            ) : (
-              <RefreshCw className="mr-2" size={16} />
-            )}
-            Cargar Predeterminados
-          </button>
-        </div>
-      </div>
-
-      {/* Input oculto para importar archivos */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        onChange={handleFileChange}
-        style={{ display: 'none' }}
-        aria-label="Seleccionar archivo JSON para importar"
-      />
-
-      {/* Información adicional */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-        <h4 className="font-semibold text-gray-900 mb-2">Información Importante:</h4>
-        <ul className="text-sm text-gray-600 space-y-1">
-          <li>• Los datos exportados incluyen toda la información: clientes, cursos y facturas</li>
-          <li>• Al importar, se reemplazarán todos los datos existentes</li>
-          <li>• Se recomienda exportar regularmente como respaldo</li>
-          <li>• <strong>sistema_datos.json:</strong> Descarga el archivo con el nombre correcto para reemplazar en <code>/public/data/</code></li>
-          <li>• Los datos predeterminados se cargan desde <code>/data/sistema_datos.json</code></li>
-        </ul>
-        
-        <div className="mt-4 p-3 bg-blue-50 rounded-md">
-          <h5 className="font-semibold text-blue-900 mb-1">💡 Cómo actualizar sistema_datos.json:</h5>
-          <ol className="text-sm text-blue-800 space-y-1">
-            <li>1. Haz clic en "Exportar a sistema_datos.json"</li>
-            <li>2. Reemplaza el archivo descargado en la carpeta <code>public/data/</code></li>
-            <li>3. Los nuevos usuarios cargarán automáticamente estos datos</li>
-          </ol>
-        </div>
-      </div>
     </div>
   );
 };

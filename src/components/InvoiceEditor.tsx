@@ -19,6 +19,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     issuer: invoice.issuer,
     language: invoice.language,
     paymentTerms: invoice.paymentTerms,
+    status: invoice.status,
     observations: invoice.observations || ''
   });
 
@@ -51,6 +52,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
         issuer: formData.issuer,
         language: formData.language,
         paymentTerms: formData.paymentTerms,
+        status: formData.status,
         observations: formData.observations
       });
 
@@ -197,6 +199,24 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
                 min="1"
                 required
               />
+            </div>
+
+            {/* Estado de la Factura */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Estado de la Factura *
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => handleInputChange('status', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Estado actual de la factura"
+                required
+              >
+                <option value="draft">Borrador</option>
+                <option value="sent">Enviada</option>
+                <option value="paid">Pagada</option>
+              </select>
             </div>
           </div>
 
