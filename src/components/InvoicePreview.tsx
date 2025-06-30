@@ -1,7 +1,8 @@
 import React from 'react';
 import { Invoice, Issuer, issuers, Language } from '../types';
 import { numberToWords } from '../utils/numberToWords';
-import { invoiceLabels, invoiceFixedValues } from '../constants/invoiceConstants';
+import { invoiceLabels, transferOptions } from '../constants/invoiceConstants';
+import { formatHours, formatCurrency } from '../utils/numberUtils';
 
 interface InvoicePreviewProps {
   invoice: Invoice;
@@ -12,10 +13,6 @@ interface InvoicePreviewProps {
 }
 
 const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber, paymentTerms, selectedIssuer, language }) => {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
-  };
-
   const generateDate = (days: number) => {
     const date = new Date();
     date.setDate(date.getDate() + days);
@@ -26,6 +23,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
   const dueDate = generateDate(paymentTerms);
 
   const t = invoiceLabels[language];
+  const selectedTransfer = transferOptions[invoice.transferOption];
 
   return (
     <div className="bg-white rounded p-4 mb-4 text-[11px] font-sans w-full mx-auto">
@@ -79,7 +77,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
               <tr key={index} className="border-t border-gray-300">
                 <td className="px-2 py-1">{index + 1}</td>
                 <td className="px-2 py-1">{item.description}</td>
-                <td className="px-2 py-1 text-right">{item.quantity}</td>
+                <td className="px-2 py-1 text-right">{formatHours(item.quantity)}</td>
                 <td className="px-2 py-1 text-right">{formatCurrency(item.unitPrice)}</td>
                 <td className="px-2 py-1 text-right">{formatCurrency(item.quantity * item.unitPrice)}</td>
               </tr>
@@ -108,17 +106,21 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
         <p>{t.transferData}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2 mt-2">
           <div>
-            <p><span className="font-semibold">{t.bankName}:</span> {invoiceFixedValues.bankName}</p>
-            <p><span className="font-semibold">{t.bankAddress}:</span> {invoiceFixedValues.bankAddress}</p>
-            <p><span className="font-semibold">{t.country}:</span> {invoiceFixedValues.country}</p>
-            <p><span className="font-semibold">{t.swiftCode}:</span> {invoiceFixedValues.swiftCode}</p>
-            <p><span className="font-semibold">{t.routingNumber}:</span> {invoiceFixedValues.routingNumber}</p>
+            <p><span className="font-semibold">{t.bankName}:</span> {selectedTransfer.bankName}</p>
+            <p><span className="font-semibold">{t.bankAddress}:</span> {selectedTransfer.bankAddress}</p>
+            <p><span className="font-semibold">{t.country}:</span> {selectedTransfer.country}</p>
+            <p><span className="font-semibold">{t.swiftCode}:</span> {selectedTransfer.swiftCode}</p>
+            {selectedTransfer.routingNumber && (
+              <p><span className="font-semibold">{t.routingNumber}:</span> {selectedTransfer.routingNumber}</p>
+            )}
+            {selectedTransfer.abaCode && (
+              <p><span className="font-semibold">{t.abaCode}:</span> {selectedTransfer.abaCode}</p>
+            )}
           </div>
           <div>
-            <p><span className="font-semibold">{t.accountOwner}:</span> {invoiceFixedValues.accountOwner}</p>
-            <p><span className="font-semibold">{t.ibanNumber}:</span> {invoiceFixedValues.ibanNumber}</p>
-            <p><span className="font-semibold">{t.accountNumber}:</span> {invoiceFixedValues.accountNumber[language]}</p>
-            <p><span className="font-semibold">{t.accountOwnerAddress}:</span> {invoiceFixedValues.address}</p>
+            <p><span className="font-semibold">{t.accountOwner}:</span> {selectedTransfer.accountOwner}</p>
+            <p><span className="font-semibold">{t.accountNumber}:</span> {selectedTransfer.accountNumber[language]}</p>
+            <p><span className="font-semibold">{t.accountOwnerAddress}:</span> {selectedTransfer.accountOwnerAddress}</p>
           </div>
         </div>
       </div>

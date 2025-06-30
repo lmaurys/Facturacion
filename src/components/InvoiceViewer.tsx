@@ -3,9 +3,10 @@ import { useReactToPrint } from 'react-to-print';
 import { InvoiceFromCourse, Client, Course, Issuer, Language, issuers } from '../types';
 import { Printer, Download, X } from 'lucide-react';
 import { numberToWords } from '../utils/numberToWords';
-import { invoiceLabels, invoiceFixedValues } from '../constants/invoiceConstants';
+import { invoiceLabels, invoiceFixedValues, transferOptions } from '../constants/invoiceConstants';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { formatHours, formatCurrency } from '../utils/numberUtils';
 
 interface InvoiceViewerProps {
   invoice: InvoiceFromCourse;
@@ -169,7 +170,7 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
                       <tr key={course.id} className="border-t border-gray-300">
                         <td className="px-2 py-1">{index + 1}</td>
                         <td className="px-2 py-1">{`${course.courseName} (${course.startDate} - ${course.endDate})`}</td>
-                        <td className="px-2 py-1 text-right">{course.hours}</td>
+                        <td className="px-2 py-1 text-right">{formatHours(course.hours)}</td>
                         <td className="px-2 py-1 text-right">{formatCurrency(course.hourlyRate)}</td>
                         <td className="px-2 py-1 text-right">{formatCurrency(course.totalValue)}</td>
                       </tr>
@@ -198,17 +199,21 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
                 <p>{t.transferData}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2 mt-2">
                   <div>
-                    <p><span className="font-semibold">{t.bankName}:</span> {invoiceFixedValues.bankName}</p>
-                    <p><span className="font-semibold">{t.bankAddress}:</span> {invoiceFixedValues.bankAddress}</p>
-                    <p><span className="font-semibold">{t.country}:</span> {invoiceFixedValues.country}</p>
-                    <p><span className="font-semibold">{t.swiftCode}:</span> {invoiceFixedValues.swiftCode}</p>
-                    <p><span className="font-semibold">{t.routingNumber}:</span> {invoiceFixedValues.routingNumber}</p>
+                    <p><span className="font-semibold">{t.bankName}:</span> {transferOptions[invoice.transferOption || 'usa'].bankName}</p>
+                    <p><span className="font-semibold">{t.bankAddress}:</span> {transferOptions[invoice.transferOption || 'usa'].bankAddress}</p>
+                    <p><span className="font-semibold">{t.country}:</span> {transferOptions[invoice.transferOption || 'usa'].country}</p>
+                    <p><span className="font-semibold">{t.swiftCode}:</span> {transferOptions[invoice.transferOption || 'usa'].swiftCode}</p>
+                    {transferOptions[invoice.transferOption || 'usa'].routingNumber && (
+                      <p><span className="font-semibold">{t.routingNumber}:</span> {transferOptions[invoice.transferOption || 'usa'].routingNumber}</p>
+                    )}
+                    {transferOptions[invoice.transferOption || 'usa'].abaCode && (
+                      <p><span className="font-semibold">{t.abaCode}:</span> {transferOptions[invoice.transferOption || 'usa'].abaCode}</p>
+                    )}
                   </div>
                   <div>
-                    <p><span className="font-semibold">{t.accountOwner}:</span> {invoiceFixedValues.accountOwner}</p>
-                    <p><span className="font-semibold">{t.ibanNumber}:</span> {invoiceFixedValues.ibanNumber}</p>
-                    <p><span className="font-semibold">{t.accountNumber}:</span> {invoiceFixedValues.accountNumber[invoice.language]}</p>
-                    <p><span className="font-semibold">{t.accountOwnerAddress}:</span> {invoiceFixedValues.address}</p>
+                    <p><span className="font-semibold">{t.accountOwner}:</span> {transferOptions[invoice.transferOption || 'usa'].accountOwner}</p>
+                    <p><span className="font-semibold">{t.accountNumber}:</span> {transferOptions[invoice.transferOption || 'usa'].accountNumber[invoice.language]}</p>
+                    <p><span className="font-semibold">{t.accountOwnerAddress}:</span> {transferOptions[invoice.transferOption || 'usa'].accountOwnerAddress}</p>
                   </div>
                 </div>
               </div>

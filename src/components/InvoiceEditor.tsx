@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { InvoiceFromCourse, Client, Course, Issuer, Language } from '../types';
+import { InvoiceFromCourse, Client, Course, Issuer, Language, TransferOption } from '../types';
 import { loadClients, loadCourses, updateInvoice } from '../utils/storage';
 import { Edit2, X, Save } from 'lucide-react';
+import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
 
 interface InvoiceEditorProps {
   invoice: InvoiceFromCourse;
@@ -20,6 +21,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     language: invoice.language,
     paymentTerms: invoice.paymentTerms,
     status: invoice.status,
+    transferOption: invoice.transferOption || 'usa',
     observations: invoice.observations || ''
   });
 
@@ -44,22 +46,31 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     e.preventDefault();
     
     try {
-      const updatedInvoice = await updateInvoice(invoice.id, {
-        ...invoice,
+      const invoiceDataToUpdate = {
         clientId: formData.clientId,
+        courseIds: invoice.courseIds,
         invoiceNumber: formData.invoiceNumber,
         invoiceDate: formData.invoiceDate,
         issuer: formData.issuer,
         language: formData.language,
         paymentTerms: formData.paymentTerms,
+        subtotal: invoice.subtotal,
+        total: invoice.total,
         status: formData.status,
+        transferOption: formData.transferOption,
         observations: formData.observations
-      });
+      };
+
+      console.log('Updating invoice with data:', invoiceDataToUpdate);
+      
+      const updatedInvoice = await updateInvoice(invoice.id, invoiceDataToUpdate);
 
       if (updatedInvoice) {
+        console.log('Invoice updated successfully:', updatedInvoice);
         alert('Factura actualizada exitosamente');
         onSave();
       } else {
+        console.log('updateInvoice returned null');
         alert('Error al actualizar la factura');
       }
     } catch (error) {
@@ -83,6 +94,8 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
       currency: 'USD'
     }).format(amount);
   };
+
+  const t = invoiceLabels[formData.language];
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -199,6 +212,24 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
                 min="1"
                 required
               />
+            </div>
+
+            {/* Opción de Transferencia */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {t.transferOption} *
+              </label>
+              <select
+                value={formData.transferOption}
+                onChange={(e) => handleInputChange('transferOption', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Seleccionar opción de transferencia"
+                required
+              >
+                <option value="usa">{transferOptions.usa.name}</option>
+                <option value="panama">{transferOptions.panama.name}</option>
+                <option value="colombia">{transferOptions.colombia.name}</option>
+              </select>
             </div>
 
             {/* Estado de la Factura */}

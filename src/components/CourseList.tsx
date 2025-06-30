@@ -3,6 +3,7 @@ import { Course, Client } from '../types';
 import { Edit2, Trash2, Plus, Calendar, DollarSign, Clock, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { loadClients } from '../utils/storage';
 import { formatDate } from '../utils/dateUtils';
+import { formatHours, formatHourlyRate, formatCurrency } from '../utils/numberUtils';
 
 interface CourseListProps {
   courses: Course[];
@@ -36,13 +37,6 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
   const getClientName = (clientId: string): string => {
     const client = clients.find(c => c.id === clientId);
     return client ? client.name : 'Cliente no encontrado';
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-ES', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
   };
 
   const getStatusBadge = (status: 'creado' | 'dictado' | 'facturado' | 'pagado') => {
@@ -351,10 +345,10 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
                   <td className="px-3 py-4">
                     <div className="text-sm text-gray-900 flex items-center mb-2">
                       <Clock className="mr-1" size={14} />
-                      <span className="font-medium">{course.hours}h</span>
+                      <span className="font-medium">{formatHours(course.hours)}h</span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      {formatCurrency(course.hourlyRate)}/h
+                      ${formatHourlyRate(course.hourlyRate)}/h
                     </div>
                   </td>
                   <td className="px-3 py-4">

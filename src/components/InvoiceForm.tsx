@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Invoice, Item, Issuer, Language, issuers } from '../types';
+import { Invoice, Item, Issuer, Language, issuers, TransferOption } from '../types';
+import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
 
 interface InvoiceFormProps {
   invoice: Invoice;
@@ -15,6 +16,8 @@ interface InvoiceFormProps {
   setPaymentTerms: (terms: number) => void;
   language: Language;
   setLanguage: (lang: Language) => void;
+  selectedTransfer: TransferOption;
+  setSelectedTransfer: (transfer: TransferOption) => void;
   onGenerateFromCourses?: () => void;
   onClearInvoice?: () => void;
 }
@@ -33,6 +36,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
   setPaymentTerms,
   language,
   setLanguage,
+  selectedTransfer,
+  setSelectedTransfer,
   onGenerateFromCourses,
   onClearInvoice,
 }) => {
@@ -72,6 +77,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
   const handleDeleteItem = (index: number) => {
     deleteItem(index);
   };
+
+  const t = invoiceLabels[language];
 
   return (
     <div className="space-y-6">
@@ -131,6 +138,21 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
             value={paymentTerms}
             onChange={(e) => setPaymentTerms(Number(e.target.value))}
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700" htmlFor="transferOption">
+            {t.transferOption}
+          </label>
+          <select
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            id="transferOption"
+            value={selectedTransfer}
+            onChange={(e) => setSelectedTransfer(e.target.value as TransferOption)}
+          >
+            <option value="usa">{transferOptions.usa.name}</option>
+            <option value="panama">{transferOptions.panama.name}</option>
+            <option value="colombia">{transferOptions.colombia.name}</option>
+          </select>
         </div>
       </div>
 

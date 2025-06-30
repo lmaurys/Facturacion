@@ -9,7 +9,7 @@ import InvoiceManagement from './components/InvoiceManagement';
 import DataManagement from './components/DataManagement';
 import InvoiceAnalytics from './components/InvoiceAnalytics';
 import InvoiceFromCourses from './components/InvoiceFromCourses';
-import { Invoice, Item, Issuer, Language, Client, InvoiceFromCourse, issuers } from './types';
+import { Invoice, Item, Issuer, Language, TransferOption, Client, InvoiceFromCourse, issuers } from './types';
 import { addInvoice, loadClients, initializeAutoSync, initializeFromAzure } from './utils/storage';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -28,11 +28,13 @@ const App: React.FC = () => {
     clientCity: 'Ciudad de Panamá, Panamá',
     items: [],
     total: 0,
+    transferOption: 'usa',
   });
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [paymentTerms, setPaymentTerms] = useState(30);
   const [selectedIssuer, setSelectedIssuer] = useState<Issuer>('colombia');
   const [language, setLanguage] = useState<Language>('es');
+  const [selectedTransfer, setSelectedTransfer] = useState<TransferOption>('usa');
 
   const invoiceRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +77,11 @@ const App: React.FC = () => {
       clearTimeout(timer);
     };
   }, []);
+
+  // Sincronizar la opción de transferencia con el invoice
+  React.useEffect(() => {
+    setInvoice((prev) => ({ ...prev, transferOption: selectedTransfer }));
+  }, [selectedTransfer]);
 
   const handlePrint = useReactToPrint({
     content: () => invoiceRef.current,
@@ -158,6 +165,7 @@ const App: React.FC = () => {
         clientCity: '',
         items: [],
         total: 0,
+        transferOption: selectedTransfer,
       });
       setInvoiceNumber('');
     }
@@ -178,6 +186,7 @@ const App: React.FC = () => {
       subtotal: total,
       total: total,
       status: 'draft',
+      transferOption: selectedTransfer,
       observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`
     };
 
@@ -198,7 +207,8 @@ const App: React.FC = () => {
       clientPhone: clientData.phone,
       clientCity: clientData.city,
       items,
-      total
+      total,
+      transferOption: selectedTransfer,
     });
     
     setShowInvoiceFromCourses(false);
@@ -245,6 +255,8 @@ const App: React.FC = () => {
                 setPaymentTerms={setPaymentTerms}
                 language={language}
                 setLanguage={setLanguage}
+                selectedTransfer={selectedTransfer}
+                setSelectedTransfer={setSelectedTransfer}
                 onGenerateFromCourses={() => setShowInvoiceFromCourses(true)}
                 onClearInvoice={clearInvoice}
               />

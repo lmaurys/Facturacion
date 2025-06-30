@@ -80,6 +80,7 @@ const InvoiceManagement: React.FC = () => {
       subtotal: total,
       total: total,
       status: 'draft',
+      transferOption: 'usa',
       observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`
     };
 

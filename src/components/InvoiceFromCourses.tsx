@@ -3,6 +3,7 @@ import { Course, Client, Item } from '../types';
 import { loadCourses, loadClients, getAvailableCoursesForInvoicing, getNextInvoiceNumber, updateCourse } from '../utils/storage';
 import { FileText, Plus, X } from 'lucide-react';
 import { getCurrentDateForInput } from '../utils/dateUtils';
+import { formatHours, formatHourlyRate, formatCurrency } from '../utils/numberUtils';
 
 interface InvoiceFromCoursesProps {
   onGenerateInvoice: (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string) => void;
@@ -182,12 +183,12 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
                                 {course.startDate} - {course.endDate}
                               </p>
                               <p className="text-sm text-gray-600">
-                                {course.hours} horas × ${course.hourlyRate.toLocaleString()}/hora
+                                {formatHours(course.hours)} horas × ${formatHourlyRate(course.hourlyRate)}/hora
                               </p>
                             </div>
                             <div className="text-right">
                               <p className="font-semibold text-gray-900">
-                                ${course.totalValue.toLocaleString()}
+                                {formatCurrency(course.totalValue)}
                               </p>
                               <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                                 course.status === 'pagado' 
@@ -216,7 +217,7 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
                   {selectedCourses.length} curso(s) seleccionado(s)
                 </span>
                 <span className="text-xl font-bold text-gray-900">
-                  Total: ${getTotalAmount().toLocaleString()}
+                  Total: {formatCurrency(getTotalAmount())}
                 </span>
               </div>
             </div>

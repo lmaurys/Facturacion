@@ -4,6 +4,8 @@ export interface Item {
   unitPrice: number;
 }
 
+export type TransferOption = 'usa' | 'panama' | 'colombia';
+
 export interface Invoice {
   clientName: string;
   clientNIT: string;
@@ -12,6 +14,7 @@ export interface Invoice {
   clientCity: string;
   items: Item[];
   total: number;
+  transferOption: TransferOption;
 }
 
 export interface Course {
@@ -54,6 +57,7 @@ export interface InvoiceFromCourse {
   subtotal: number;
   total: number;
   status: 'draft' | 'sent' | 'paid';
+  transferOption: TransferOption;
   observations?: string;
 }
 

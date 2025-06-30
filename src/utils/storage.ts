@@ -22,6 +22,7 @@ const dispatchSyncEvent = (type: 'start' | 'success' | 'error') => {
 // Función para sincronizar automáticamente después de cada cambio
 const autoSyncAfterChange = async () => {
   try {
+    console.log('🔄 Starting auto sync after change...');
     dispatchSyncEvent('start');
     
     const dataToSync = {
@@ -31,6 +32,12 @@ const autoSyncAfterChange = async () => {
       exportDate: new Date().toISOString(),
       version: 2
     };
+
+    console.log('📊 Data to sync:', {
+      coursesCount: dataToSync.courses.length,
+      clientsCount: dataToSync.clients.length,
+      invoicesCount: dataToSync.invoices.length
+    });
 
     const success = await saveDataToAzure(dataToSync);
     
@@ -266,11 +273,19 @@ export const addInvoice = async (invoiceData: Omit<InvoiceFromCourse, 'id'>): Pr
 
 export const updateInvoice = async (invoiceId: string, invoiceData: Omit<InvoiceFromCourse, 'id'>): Promise<InvoiceFromCourse | null> => {
   try {
+    console.log('updateInvoice called with:', { invoiceId, invoiceData });
+    console.log('Current invoices in cache:', localDataCache.invoices.length);
+    
     const invoiceIndex = localDataCache.invoices.findIndex(invoice => invoice.id === invoiceId);
     
+    console.log('Invoice index found:', invoiceIndex);
+    
     if (invoiceIndex === -1) {
+      console.log('Invoice not found with id:', invoiceId);
       return null;
     }
+    
+    console.log('Original invoice:', localDataCache.invoices[invoiceIndex]);
     
     const updatedInvoice: InvoiceFromCourse = {
       ...localDataCache.invoices[invoiceIndex],
@@ -278,10 +293,16 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
       id: invoiceId
     };
     
+    console.log('Updated invoice to save:', updatedInvoice);
+    
     localDataCache.invoices[invoiceIndex] = updatedInvoice;
+    
+    console.log('Invoice updated in cache, starting sync...');
     
     // Sincronizar automáticamente con Azure
     await autoSyncAfterChange();
+    
+    console.log('Sync completed, returning updated invoice');
     
     return updatedInvoice;
   } catch (error) {

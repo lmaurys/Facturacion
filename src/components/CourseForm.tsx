@@ -152,9 +152,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     onChange={handleInputChange}
                     required
                     min="0"
-                    step="0.5"
-                    title="Número total de horas del curso"
-                    placeholder="Ej: 40"
+                    step="0.01"
+                    title="Número total de horas del curso (hasta 2 decimales)"
+                    placeholder="Ej: 40.25"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -169,9 +169,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     onChange={handleInputChange}
                     required
                     min="0"
-                    step="0.01"
-                    title="Valor por hora del curso"
-                    placeholder="Ej: 150"
+                    step="0.0000000001"
+                    title="Valor por hora del curso (hasta 10 decimales)"
+                    placeholder="Ej: 150.123456789"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
