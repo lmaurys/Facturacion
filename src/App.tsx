@@ -17,15 +17,16 @@ import html2canvas from 'html2canvas';
 type AppMode = 'invoicing' | 'courses' | 'clients' | 'invoices' | 'analytics' | 'data';
 
 const App: React.FC = () => {
-  const [currentMode, setCurrentMode] = useState<AppMode>('invoicing');
+  const [currentMode, setCurrentMode] = useState<AppMode>('clients');
   const [showInvoiceFromCourses, setShowInvoiceFromCourses] = useState(false);
   const [hasTriedAutoLoad, setHasTriedAutoLoad] = useState(false);
+  const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [invoice, setInvoice] = useState<Invoice>({
-    clientName: 'Fast Lane Consulting Services Latam',
-    clientNIT: '155596520-2-2015',
-    clientAddress: 'Punta Pacíf, Cll Isaac Hanono Missri. Ed Oceanía Business',
-    clientPhone: '(51) 991347214',
-    clientCity: 'Ciudad de Panamá, Panamá',
+    clientName: '',
+    clientNIT: '',
+    clientAddress: '',
+    clientPhone: '',
+    clientCity: '',
     items: [],
     total: 0,
     transferOption: 'usa',
@@ -46,13 +47,13 @@ const App: React.FC = () => {
       try {
         console.log('🚀 Inicializando aplicación con Azure Blob Storage...');
         
-        // Cargar datos desde Azure (única fuente de verdad)
+        // Intentar cargar datos desde Azure
         const success = await initializeFromAzure();
         
         if (success) {
           console.log('✅ Aplicación inicializada desde Azure exitosamente');
         } else {
-          console.log('⚠️ Error inicializando desde Azure, continuando con datos vacíos');
+          console.log('⚠️ Error inicializando desde Azure, pero la app funcionará normalmente');
         }
         
         setHasTriedAutoLoad(true);
@@ -62,6 +63,8 @@ const App: React.FC = () => {
       }
     };
 
+    // Permitir uso inmediato de la app mientras se cargan los datos
+    setIsAppInitialized(true);
     initializeApp();
   }, [hasTriedAutoLoad]);
 
@@ -215,6 +218,62 @@ const App: React.FC = () => {
     setCurrentMode('invoicing');
   };
 
+  // Nueva función para guardar facturas tradicionales
+  const handleSaveInvoice = async () => {
+    if (!invoice.clientName || invoice.items.length === 0) {
+      alert('Por favor completa todos los campos obligatorios: cliente y al menos un item');
+      return;
+    }
+
+    try {
+      // Buscar el cliente por nombre (si existe) o crear uno temporal
+      const clients = await loadClients();
+      let clientId = '';
+      
+      const existingClient = clients.find(c => c.name === invoice.clientName);
+      if (existingClient) {
+        clientId = existingClient.id;
+      } else {
+        // El cliente no existe, crear uno temporal
+        clientId = `temp_client_${Date.now()}`;
+      }
+
+      // Generar número de factura automáticamente si está vacío
+      let finalInvoiceNumber = invoiceNumber;
+      if (!finalInvoiceNumber) {
+        const { getNextInvoiceNumber } = await import('./utils/storage');
+        finalInvoiceNumber = await getNextInvoiceNumber();
+        setInvoiceNumber(finalInvoiceNumber);
+      }
+
+      const invoiceData: Omit<InvoiceFromCourse, 'id'> = {
+        clientId: clientId,
+        courseIds: [], // No hay cursos asociados para facturas tradicionales
+        invoiceNumber: finalInvoiceNumber,
+        invoiceDate: new Date().toISOString().split('T')[0],
+        issuer: selectedIssuer,
+        language: language,
+        paymentTerms: paymentTerms,
+        subtotal: invoice.total,
+        total: invoice.total,
+        status: 'draft',
+        transferOption: selectedTransfer,
+        observations: `Factura tradicional - Cliente: ${invoice.clientName}, NIT: ${invoice.clientNIT}`
+      };
+
+      const savedInvoice = await addInvoice(invoiceData);
+      if (savedInvoice) {
+        alert(`¡Factura guardada exitosamente!\nNúmero de factura: ${finalInvoiceNumber}`);
+        console.log('Factura guardada:', savedInvoice);
+      } else {
+        alert('Error al guardar la factura. Intenta nuevamente.');
+      }
+    } catch (error) {
+      console.error('Error guardando factura:', error);
+      alert('Error al guardar la factura. Intenta nuevamente.');
+    }
+  };
+
   const renderContent = () => {
     if (currentMode === 'courses') {
       return <CourseManagement />;
@@ -259,16 +318,18 @@ const App: React.FC = () => {
                 setSelectedTransfer={setSelectedTransfer}
                 onGenerateFromCourses={() => setShowInvoiceFromCourses(true)}
                 onClearInvoice={clearInvoice}
+                onSaveInvoice={handleSaveInvoice}
               />
             </div>
+
             <div className="bg-white shadow-md rounded-lg p-6">
               <div ref={invoiceRef}>
                 <InvoicePreview
                   invoice={invoice}
                   invoiceNumber={invoiceNumber}
-                  paymentTerms={paymentTerms}
                   selectedIssuer={selectedIssuer}
                   language={language}
+                  paymentTerms={paymentTerms}
                 />
               </div>
               <div className="mt-4 flex justify-end space-x-4">
@@ -376,26 +437,6 @@ const App: React.FC = () => {
           </div>
         </div>
       </nav>
-
-      {/* Page Title */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <h2 className="text-2xl font-bold text-gray-900">
-            {currentMode === 'clients'
-              ? 'Gestión de Clientes'
-              : currentMode === 'courses'
-              ? 'Gestión de Cursos'
-              : currentMode === 'invoicing' 
-              ? (language === 'es' ? 'Facturación Profesional' : 'Professional Invoicing')
-              : currentMode === 'invoices'
-              ? 'Gestión de Facturas'
-              : currentMode === 'analytics'
-              ? 'Análisis de Facturación'
-              : 'Gestión Central de Datos'
-            }
-          </h2>
-        </div>
-      </div>
 
       {/* Main Content */}
       {renderContent()}

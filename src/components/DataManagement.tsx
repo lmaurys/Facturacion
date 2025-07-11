@@ -1,151 +1,98 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Database } from 'lucide-react';
 
 interface DataManagementProps {
   onDataImported?: () => void;
 }
 
 const DataManagement: React.FC<DataManagementProps> = ({ onDataImported }) => {
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>('');
+  const [lastUpdate, setLastUpdate] = useState<string>('');
+  const [systemStatus, setSystemStatus] = useState<'loading' | 'active' | 'error'>('loading');
 
   useEffect(() => {
-    // Obtener el último timestamp de sincronización
-    const lastSyncTime = localStorage.getItem('lastAzureSync');
-    if (lastSyncTime) {
-      setLastSync(new Date(lastSyncTime).toLocaleString());
-    }
+    // Mostrar cuándo se cargó la página del sistema
+    const currentTime = new Date().toLocaleString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    setLastUpdate(currentTime);
+    setSystemStatus('active');
 
-    // Escuchar eventos de sincronización
-    const handleSyncStart = () => {
-      setSyncStatus('syncing');
-      setMessage('Sincronizando con Azure Blob Storage...');
+    // Actualizar la fecha cada vez que se modifique algo
+    const handleDataUpdate = () => {
+      const updateTime = new Date().toLocaleString('es-ES', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      setLastUpdate(updateTime);
+      setSystemStatus('active');
     };
 
-    const handleSyncSuccess = () => {
-      setSyncStatus('success');
-      setMessage('Sincronización exitosa con Azure');
-      setLastSync(new Date().toLocaleString());
-      localStorage.setItem('lastAzureSync', new Date().toISOString());
-    };
-
-    const handleSyncError = () => {
-      setSyncStatus('error');
-      setMessage('Error en la sincronización con Azure');
-    };
-
-    // Escuchar eventos personalizados de sincronización
-    window.addEventListener('azureSyncStart', handleSyncStart);
-    window.addEventListener('azureSyncSuccess', handleSyncSuccess);
-    window.addEventListener('azureSyncError', handleSyncError);
+    // Escuchar eventos de actualización
+    window.addEventListener('courseUpdated', handleDataUpdate);
+    window.addEventListener('clientUpdated', handleDataUpdate);
+    window.addEventListener('invoiceUpdated', handleDataUpdate);
+    window.addEventListener('azureSyncSuccess', handleDataUpdate);
 
     return () => {
-      window.removeEventListener('azureSyncStart', handleSyncStart);
-      window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
-      window.removeEventListener('azureSyncError', handleSyncError);
+      window.removeEventListener('courseUpdated', handleDataUpdate);
+      window.removeEventListener('clientUpdated', handleDataUpdate);
+      window.removeEventListener('invoiceUpdated', handleDataUpdate);
+      window.removeEventListener('azureSyncSuccess', handleDataUpdate);
     };
   }, []);
 
-  const getStatusColor = () => {
-    switch (syncStatus) {
-      case 'syncing': return 'text-blue-600';
-      case 'success': return 'text-green-600';
-      case 'error': return 'text-red-600';
-      default: return 'text-gray-600';
-    }
-  };
-
-  const getStatusIcon = () => {
-    switch (syncStatus) {
-      case 'syncing': return <RefreshCw className="animate-spin" size={20} />;
-      case 'success': return <CheckCircle size={20} />;
-      case 'error': return <AlertCircle size={20} />;
-      default: return <Cloud size={20} />;
-    }
-  };
-
   return (
-    <div className="bg-white shadow-md rounded-lg p-6">
-      <div className="flex items-center mb-6">
-        <Cloud className="mr-3 text-blue-600" size={24} />
-        <h2 className="text-2xl font-bold text-gray-900">Sistema de Persistencia Azure</h2>
-      </div>
-
-      {/* Estado de Sincronización */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
+    <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="bg-white shadow-md rounded-lg p-6 mb-6">
           <div className="flex items-center">
-            <div className={`mr-3 ${getStatusColor()}`}>
-              {getStatusIcon()}
-            </div>
+            <Database className="mr-3 text-blue-600" size={24} />
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Estado de Sincronización</h3>
-              <p className={`text-sm ${getStatusColor()}`}>{message || 'Esperando sincronización...'}</p>
+              <h2 className="text-2xl font-bold text-gray-900">Gestión Central de Datos</h2>
+              <p className="text-sm text-gray-600">Sistema de gestión y sincronización de datos</p>
             </div>
           </div>
-          {syncStatus === 'success' && (
-            <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
-              Sincronizado
+        </div>
+
+        {/* Información de última actualización */}
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Estado del Sistema</h3>
+          
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-gray-600 font-medium">Sistema accedido:</span>
+              <span className="text-gray-900 font-semibold">
+                {lastUpdate}
+              </span>
             </div>
-          )}
-          {syncStatus === 'error' && (
-            <div className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
-              Error
+            
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-gray-600 font-medium">Estado:</span>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                systemStatus === 'active' ? 'bg-green-100 text-green-800' : 
+                systemStatus === 'error' ? 'bg-red-100 text-red-800' : 
+                'bg-yellow-100 text-yellow-800'
+              }`}>
+                {systemStatus === 'active' ? 'Activo' : 
+                 systemStatus === 'error' ? 'Error' : 'Cargando'}
+              </span>
             </div>
-          )}
-        </div>
-        
-        {lastSync && (
-          <p className="text-sm text-gray-600">
-            <strong>Última sincronización:</strong> {lastSync}
-          </p>
-        )}
-      </div>
-
-      {/* Información del Sistema */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-blue-50 rounded-lg p-4">
-          <h4 className="text-md font-semibold text-blue-900 mb-2">🔄 Sincronización Automática</h4>
-          <ul className="text-sm text-blue-800 space-y-1">
-            <li>• <strong>Carga inicial:</strong> Al abrir la aplicación</li>
-            <li>• <strong>Sincronización:</strong> Cada 15 minutos automáticamente</li>
-            <li>• <strong>Guardar cambios:</strong> Automático al crear/editar/eliminar</li>
-            <li>• <strong>Fuente única:</strong> Azure Blob Storage</li>
-          </ul>
-        </div>
-
-        <div className="bg-green-50 rounded-lg p-4">
-          <h4 className="text-md font-semibold text-green-900 mb-2">📊 Información de Datos</h4>
-          <ul className="text-sm text-green-800 space-y-1">
-            <li>• <strong>Storage:</strong> Azure Blob Storage</li>
-            <li>• <strong>Container:</strong> capacitaciones</li>
-            <li>• <strong>Archivo:</strong>sistema_gestion_completo.json</li>
-            <li>• <strong>Autenticación:</strong> SAS Token</li>
-          </ul>
-        </div>
-      </div>
-
-      {/* Nota Importante */}
-      <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
-        <h4 className="font-semibold text-yellow-900 mb-2">💡 Sistema Completamente Automatizado</h4>
-        <p className="text-sm text-yellow-800">
-          Este sistema ahora funciona completamente de forma automática. No necesitas realizar ninguna acción manual.
-          Todos los datos se sincronizan automáticamente con Azure Blob Storage.
-        </p>
-      </div>
-
-      {/* Debug Info (solo en desarrollo) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-          <h5 className="font-semibold text-gray-900 mb-2">🔧 Información de Debug:</h5>
-          <div className="text-sm text-gray-600 space-y-1">
-            <p><strong>Estado actual:</strong> {syncStatus}</p>
-            <p><strong>Mensaje:</strong> {message || 'Sin mensaje'}</p>
-            <p><strong>Última sync:</strong> {lastSync || 'Nunca'}</p>
+            
+            <p className="text-xs text-gray-500 mt-2">
+              Los datos se actualizan automáticamente al guardar o editar cualquier registro
+            </p>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

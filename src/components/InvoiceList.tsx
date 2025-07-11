@@ -23,7 +23,7 @@ interface InvoiceListProps {
   onEdit: (invoice: InvoiceFromCourse) => void;
   onDelete: (id: string) => void;
   onView: (invoice: InvoiceFromCourse) => void;
-  onAdd: () => void;
+  // Removido onAdd
 }
 
 type SortKey = 'invoiceNumber' | 'clientId' | 'invoiceDate' | 'total' | 'status';
@@ -33,16 +33,16 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   invoices, 
   onEdit, 
   onDelete, 
-  onView, 
-  onAdd 
+  onView
+  // Removido onAdd
 }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [sortKey, setSortKey] = useState<SortKey | null>('invoiceNumber');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   useEffect(() => {
     const loadData = async () => {
@@ -143,6 +143,45 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     return buttons;
   };
 
+  const handleDeleteInvoice = (invoice: InvoiceFromCourse) => {
+    const isPaid = invoice.status === 'paid';
+    
+    if (isPaid) {
+      // Confirmación especial para facturas pagadas
+      const confirmMessage = `🚨 ATENCIÓN: Eliminar Factura Pagada
+
+Factura: ${invoice.invoiceNumber}
+Cliente: ${getClientName(invoice.clientId)}
+Estado: ${getStatusText(invoice.status)}
+Fecha: ${invoice.invoiceDate}
+Valor: ${formatCurrency(invoice.total)}
+
+⚠️ ADVERTENCIA CRÍTICA: Esta factura ya ha sido PAGADA.
+Al eliminarla podrías:
+• Perder el historial de pagos
+• Crear inconsistencias contables graves
+• Afectar reportes financieros y de ingresos
+• Violar políticas de auditoría
+
+🔒 Esta es una operación de ALTO RIESGO financiero.
+
+¿Estás COMPLETAMENTE SEGURO de que quieres eliminar esta factura pagada?
+
+Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
+      
+      const userInput = prompt(confirmMessage);
+      if (userInput === 'ELIMINAR FACTURA PAGADA') {
+        onDelete(invoice.id);
+      }
+    } else {
+      // Confirmación normal para facturas no pagadas
+      const statusText = getStatusText(invoice.status);
+      if (window.confirm(`¿Estás seguro de que quieres eliminar la factura "${invoice.invoiceNumber}" (${statusText})?`)) {
+        onDelete(invoice.id);
+      }
+    }
+  };
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       // Cambiar dirección o resetear
@@ -227,31 +266,41 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   return (
     <div className="bg-white shadow-md rounded-lg p-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Lista de Facturas</h2>
-        <button
-          onClick={onAdd}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
-        >
-          <Plus className="mr-2" size={20} />
-          Nueva Factura
-        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Gestión de Facturas</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Visualiza, edita y gestiona todas tus facturas existentes
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm text-gray-500">
+            Total: <span className="font-medium">{invoices.length}</span> facturas
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            💡 Para crear nuevas facturas, usa "Facturación Profesional"
+          </p>
+        </div>
       </div>
 
       {/* Información sobre acciones rápidas */}
       <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-        <h4 className="font-semibold text-blue-900 mb-2">💡 Acciones Rápidas:</h4>
-        <div className="text-sm text-blue-800 grid grid-cols-1 md:grid-cols-3 gap-2">
+        <h4 className="font-semibold text-blue-900 mb-2">💡 Acciones Disponibles:</h4>
+        <div className="text-sm text-blue-800 grid grid-cols-1 md:grid-cols-4 gap-2">
           <div className="flex items-center">
-            <Send size={14} className="mr-2" />
-            <span>Marcar como enviada</span>
-          </div>
-          <div className="flex items-center">
-            <DollarSign size={14} className="mr-2" />
-            <span>Marcar como pagada</span>
+            <Eye size={14} className="mr-2" />
+            <span>Ver factura completa</span>
           </div>
           <div className="flex items-center">
             <Edit2 size={14} className="mr-2" />
-            <span>Editar factura completa</span>
+            <span>Editar factura</span>
+          </div>
+          <div className="flex items-center">
+            <Send size={14} className="mr-2" />
+            <span>Cambiar estado</span>
+          </div>
+          <div className="flex items-center">
+            <Trash2 size={14} className="mr-2" />
+            <span>Eliminar factura</span>
           </div>
         </div>
       </div>
@@ -326,18 +375,17 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
           </h3>
           <p className="mt-1 text-sm text-gray-500">
             {invoices.length === 0 
-              ? 'Las facturas aparecerán aquí cuando crees cursos.' 
+              ? 'Las facturas aparecerán aquí cuando las crees desde "Facturación Profesional".' 
               : 'Intenta ajustar los filtros de búsqueda.'}
           </p>
           {invoices.length === 0 && (
-            <div className="mt-6">
-              <button
-                onClick={onAdd}
-                className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-              >
-                <Plus className="mr-2" size={16} />
-                Nueva Factura
-              </button>
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>💡 Para crear tu primera factura:</strong>
+              </p>
+              <p className="text-sm text-blue-600 mt-2">
+                Ve a la sección "Facturación Profesional" donde podrás crear facturas manualmente o generarlas desde cursos existentes.
+              </p>
             </div>
           )}
         </div>
@@ -478,9 +526,17 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                           <Edit2 size={14} />
                         </button>
                         <button
-                          onClick={() => onDelete(invoice.id)}
-                          className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
-                          title="Eliminar factura"
+                          onClick={() => handleDeleteInvoice(invoice)}
+                          className={`p-1 rounded ${
+                            invoice.status === 'paid'
+                              ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                              : 'text-red-600 hover:text-red-900 hover:bg-red-50'
+                          }`}
+                          title={
+                            invoice.status === 'paid'
+                              ? 'Eliminar factura pagada (requiere confirmación especial)'
+                              : 'Eliminar factura'
+                          }
                         >
                           <Trash2 size={14} />
                         </button>

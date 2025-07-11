@@ -113,8 +113,8 @@ export const transferOptions: Record<TransferOption, {
     swiftCode: 'CAFECOBBXXX',
     accountOwner: 'LUIS ORLANDO MAURY SANCHEZ',
     accountNumber: {
-      es: 'Cuenta de Ahorros No. 010991023131',
-      en: 'Savings account No. 010991023131'
+      es: 'Cuenta de Ahorros No. 4515-7000-3298',
+      en: 'Savings account No. 4515-7000-3298'
     },
     accountOwnerAddress: 'Carrera 6 14-37 Mosquera, Cundinamarca, Colombia',
     abaCode: '026009593',

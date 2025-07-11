@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import InvoiceList from './InvoiceList';
 import InvoiceViewer from './InvoiceViewer';
 import InvoiceEditor from './InvoiceEditor';
-import InvoiceFromCourses from './InvoiceFromCourses';
-import { InvoiceFromCourse, Client, Item, Course } from '../types';
-import { loadInvoices, deleteInvoice, addInvoice, loadClients, loadCourses } from '../utils/storage';
+import { InvoiceFromCourse, Client, Course } from '../types';
+import { loadInvoices, deleteInvoice, loadClients, loadCourses } from '../utils/storage';
 
 const InvoiceManagement: React.FC = () => {
   const [invoices, setInvoices] = useState<InvoiceFromCourse[]>([]);
@@ -13,7 +12,6 @@ const InvoiceManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [viewingInvoice, setViewingInvoice] = useState<InvoiceFromCourse | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceFromCourse | null>(null);
-  const [showCreateFromCourses, setShowCreateFromCourses] = useState(false);
 
   useEffect(() => {
     loadAllData();
@@ -46,53 +44,60 @@ const InvoiceManagement: React.FC = () => {
   };
 
   const handleDeleteInvoice = async (id: string) => {
-    if (window.confirm('¿Estás seguro de que quieres eliminar esta factura?')) {
-      try {
-        await deleteInvoice(id);
-        await loadAllData(); // Recargar la lista
-      } catch (error) {
-        console.error('Error deleting invoice:', error);
-        alert('Error al eliminar la factura');
+    // Buscar la factura para obtener información
+    const invoice = invoices.find(inv => inv.id === id);
+    
+    if (!invoice) {
+      alert('Error: Factura no encontrada');
+      return;
+    }
+    
+    const isPaid = invoice.status === 'paid';
+    
+    if (isPaid) {
+      // Confirmación especial para facturas pagadas
+      const confirmMessage = `🚨 ATENCIÓN: Eliminar Factura Pagada
+
+Factura: ${invoice.invoiceNumber}
+Estado: Pagada
+Fecha: ${invoice.invoiceDate}
+Valor: ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'USD' }).format(invoice.total)}
+
+⚠️ ADVERTENCIA CRÍTICA: Esta factura ya ha sido PAGADA.
+Al eliminarla podrías:
+• Perder el historial de pagos
+• Crear inconsistencias contables graves
+• Afectar reportes financieros y de ingresos
+• Violar políticas de auditoría
+
+🔒 Esta es una operación de ALTO RIESGO financiero.
+
+¿Estás COMPLETAMENTE SEGURO de que quieres eliminar esta factura pagada?
+
+Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
+      
+      const userInput = prompt(confirmMessage);
+      if (userInput !== 'ELIMINAR FACTURA PAGADA') {
+        return; // Usuario canceló o no escribió la confirmación correcta
+      }
+    } else {
+      // Confirmación normal para facturas no pagadas
+      const statusText = invoice.status === 'sent' ? 'Enviada' : 'Borrador';
+      if (!window.confirm(`¿Estás seguro de que quieres eliminar la factura "${invoice.invoiceNumber}" (${statusText})?`)) {
+        return;
       }
     }
-  };
-
-  const handleAddInvoice = () => {
-    setShowCreateFromCourses(true);
-  };
-
-  const handleCreateInvoiceFromCourses = async (
-    items: Item[], 
-    clientData: Client, 
-    courseIds: string[], 
-    invoiceNumber: string
-  ) => {
-    const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     
-    const invoiceData: Omit<InvoiceFromCourse, 'id'> = {
-      clientId: clientData.id,
-      courseIds: courseIds,
-      invoiceNumber: invoiceNumber,
-      invoiceDate: new Date().toISOString().split('T')[0],
-      issuer: 'colombia',
-      language: 'es',
-      paymentTerms: 30,
-      subtotal: total,
-      total: total,
-      status: 'draft',
-      transferOption: 'usa',
-      observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`
-    };
-
     try {
-      await addInvoice(invoiceData);
-      setShowCreateFromCourses(false);
+      await deleteInvoice(id);
       await loadAllData(); // Recargar la lista
     } catch (error) {
-      console.error('Error creating invoice:', error);
-      alert('Error al crear la factura');
+      console.error('Error deleting invoice:', error);
+      alert('Error al eliminar la factura');
     }
   };
+
+
 
   const handleCloseModals = () => {
     setViewingInvoice(null);
@@ -130,7 +135,6 @@ const InvoiceManagement: React.FC = () => {
           onView={handleViewInvoice}
           onEdit={handleEditInvoice}
           onDelete={handleDeleteInvoice}
-          onAdd={handleAddInvoice}
         />
       </div>
 
@@ -157,13 +161,7 @@ const InvoiceManagement: React.FC = () => {
         />
       )}
 
-      {/* Modal para crear factura desde cursos */}
-      {showCreateFromCourses && (
-        <InvoiceFromCourses
-          onGenerateInvoice={handleCreateInvoiceFromCourses}
-          onClose={() => setShowCreateFromCourses(false)}
-        />
-      )}
+
     </div>
   );
 };

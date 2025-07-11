@@ -10,13 +10,12 @@ interface CourseListProps {
   onEdit: (course: Course) => void;
   onDelete: (id: string) => void;
   onAdd: () => void;
-  onRefresh?: () => void;
 }
 
 type SortKey = 'courseName' | 'clientId' | 'startDate' | 'hours' | 'totalValue' | 'status' | 'invoiceNumber';
 type SortDirection = 'asc' | 'desc' | null;
 
-const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAdd, onRefresh }) => {
+const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAdd }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -136,6 +135,41 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
     setClientFilter('all');
     setSortKey(null);
     setSortDirection(null);
+  };
+
+  const handleDeleteCourse = (course: Course) => {
+    const isInvoiced = course.status === 'facturado' || course.status === 'pagado';
+    
+    if (isInvoiced) {
+      // Confirmación especial para cursos facturados
+      const confirmMessage = `⚠️ ATENCIÓN: Eliminar Curso Facturado
+
+Curso: ${course.courseName}
+Cliente: ${getClientName(course.clientId)}
+Estado: ${getStatusText(course.status)}
+${course.invoiceNumber ? `Número de Factura: ${course.invoiceNumber}` : ''}
+Valor: ${formatCurrency(course.totalValue)}
+
+🚨 ADVERTENCIA: Este curso ya ha sido facturado${course.status === 'pagado' ? ' y pagado' : ''}. 
+Al eliminarlo podrías:
+• Perder el historial de facturación
+• Crear inconsistencias en los registros
+• Afectar reportes financieros
+
+¿Estás COMPLETAMENTE SEGURO de que quieres eliminar este curso?
+
+Escribe "CONFIRMAR" para proceder:`;
+      
+      const userInput = prompt(confirmMessage);
+      if (userInput === 'CONFIRMAR') {
+        onDelete(course.id);
+      }
+    } else {
+      // Confirmación normal para cursos no facturados
+      if (window.confirm(`¿Estás seguro de que quieres eliminar el curso "${course.courseName}"?`)) {
+        onDelete(course.id);
+      }
+    }
   };
 
   return (
@@ -396,9 +430,17 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
                         <Edit2 size={14} />
                       </button>
                       <button
-                        onClick={() => onDelete(course.id)}
-                        className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
-                        title="Eliminar curso"
+                        onClick={() => handleDeleteCourse(course)}
+                        className={`p-1 rounded ${
+                          course.status === 'facturado' || course.status === 'pagado'
+                            ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                            : 'text-red-600 hover:text-red-900 hover:bg-red-50'
+                        }`}
+                        title={
+                          course.status === 'facturado' || course.status === 'pagado'
+                            ? 'Eliminar curso facturado (requiere confirmación especial)'
+                            : 'Eliminar curso'
+                        }
                       >
                         <Trash2 size={14} />
                       </button>

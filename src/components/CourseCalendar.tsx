@@ -12,6 +12,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<string>('');
 
   useEffect(() => {
     const loadData = async () => {
@@ -22,6 +23,16 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
         ]);
         setCourses(loadedCourses);
         setClients(loadedClients);
+        
+        // Obtener fecha de última actualización
+        const storedLastUpdate = localStorage.getItem('lastDataUpdate');
+        if (storedLastUpdate) {
+          setLastUpdate(storedLastUpdate);
+        } else {
+          const now = new Date().toISOString();
+          setLastUpdate(now);
+          localStorage.setItem('lastDataUpdate', now);
+        }
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -30,6 +41,26 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     };
 
     loadData();
+    
+    // Escuchar eventos de sincronización para actualizar la fecha
+    const handleSyncSuccess = () => {
+      updateLastUpdateTime();
+    };
+
+    // Escuchar cambios en el storage para actualizar la fecha
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'lastDataUpdate') {
+        setLastUpdate(e.newValue || '');
+      }
+    };
+
+    window.addEventListener('azureSyncSuccess', handleSyncSuccess);
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const getClientName = (clientId: string): string => {
@@ -42,6 +73,37 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
       style: 'currency',
       currency: 'USD'
     }).format(amount);
+  };
+
+  const formatLastUpdate = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return '';
+    }
+  };
+
+  // Función para calcular la duración del curso en días
+  const calculateCourseDuration = (startDate: string, endDate: string): number => {
+    const start = createLocalDate(startDate);
+    const end = createLocalDate(endDate);
+    const timeDiff = end.getTime() - start.getTime();
+    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    return daysDiff + 1; // +1 porque incluye tanto el día de inicio como el de fin
+  };
+
+  // Función para calcular el valor proporcional por día
+  const calculateDailyValue = (course: Course): number => {
+    const duration = calculateCourseDuration(course.startDate, course.endDate);
+    return course.totalValue / duration;
   };
 
   const getStatusColor = (status: string) => {
@@ -142,6 +204,12 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     setCurrentDate(new Date());
   };
 
+  const updateLastUpdateTime = () => {
+    const now = new Date().toISOString();
+    setLastUpdate(now);
+    localStorage.setItem('lastDataUpdate', now);
+  };
+
   const monthNames = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -169,10 +237,17 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
       {/* Header del calendario */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center space-x-4">
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-            <Calendar className="mr-3" size={24} />
-            Calendario de Cursos
-          </h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+              <Calendar className="mr-3" size={24} />
+              Calendario de Cursos
+            </h2>
+            {lastUpdate && (
+              <p className="text-sm text-gray-500 mt-1">
+                Última actualización: {formatLastUpdate(lastUpdate)}
+              </p>
+            )}
+          </div>
           <button
             onClick={goToToday}
             className="px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200"
@@ -204,51 +279,39 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
         </div>
       </div>
 
-      {/* Estadísticas del mes */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      {/* Resumen del mes */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-blue-50 p-4 rounded-lg">
-          <div className="flex items-center">
-            <Calendar className="h-8 w-8 text-blue-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-blue-600">Cursos del Mes</p>
-              <p className="text-2xl font-bold text-blue-900">{coursesInMonth.length}</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Calendar className="h-6 w-6 text-blue-600" />
+              <span className="ml-2 text-sm font-medium text-blue-600">Cursos</span>
             </div>
+            <span className="text-xl font-bold text-blue-900">{coursesInMonth.length}</span>
           </div>
         </div>
         
         <div className="bg-green-50 p-4 rounded-lg">
-          <div className="flex items-center">
-            <DollarSign className="h-8 w-8 text-green-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-green-600">Valor Total</p>
-              <p className="text-2xl font-bold text-green-900">
-                {formatCurrency(coursesInMonth.reduce((sum, course) => sum + course.totalValue, 0))}
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <DollarSign className="h-6 w-6 text-green-600" />
+              <span className="ml-2 text-sm font-medium text-green-600">Valor Total</span>
             </div>
-          </div>
-        </div>
-        
-        <div className="bg-yellow-50 p-4 rounded-lg">
-          <div className="flex items-center">
-            <Clock className="h-8 w-8 text-yellow-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-yellow-600">Horas Totales</p>
-              <p className="text-2xl font-bold text-yellow-900">
-                {coursesInMonth.reduce((sum, course) => sum + course.hours, 0)}
-              </p>
-            </div>
+            <span className="text-xl font-bold text-green-900">
+              {formatCurrency(coursesInMonth.reduce((sum, course) => sum + course.totalValue, 0))}
+            </span>
           </div>
         </div>
         
         <div className="bg-purple-50 p-4 rounded-lg">
-          <div className="flex items-center">
-            <User className="h-8 w-8 text-purple-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-purple-600">Clientes Únicos</p>
-              <p className="text-2xl font-bold text-purple-900">
-                {new Set(coursesInMonth.map(course => course.clientId)).size}
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <User className="h-6 w-6 text-purple-600" />
+              <span className="ml-2 text-sm font-medium text-purple-600">Clientes</span>
             </div>
+            <span className="text-xl font-bold text-purple-900">
+              {new Set(coursesInMonth.map(course => course.clientId)).size}
+            </span>
           </div>
         </div>
       </div>
@@ -276,7 +339,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
             return (
               <div
                 key={index}
-                className={`min-h-[120px] p-2 border-r border-b border-gray-200 last:border-r-0 ${
+                className={`min-h-[100px] p-2 border-r border-b border-gray-200 last:border-r-0 ${
                   day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
                 } ${isToday ? 'bg-blue-50' : ''}`}
               >
@@ -298,22 +361,36 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
                         <div
                           key={course.id}
                           onClick={() => onCourseClick && onCourseClick(course)}
-                          className={`text-xs p-1 rounded border cursor-pointer hover:shadow-sm transition-shadow ${getStatusColor(course.status)}`}
-                          title={`${course.courseName} - ${getClientName(course.clientId)} - ${formatCurrency(course.totalValue)}`}
+                          className={`text-xs p-2 rounded border cursor-pointer hover:shadow-sm transition-shadow ${getStatusColor(course.status)}`}
+                          title={`${course.courseName}
+Cliente: ${getClientName(course.clientId)}
+Fechas: ${course.startDate} - ${course.endDate}
+Valor total: ${formatCurrency(course.totalValue)}
+Valor diario: ${formatCurrency(calculateDailyValue(course))}
+Estado: ${getStatusText(course.status)}`}
                         >
-                          <div className="font-medium truncate">
+                          <div className="font-medium truncate mb-1">
                             {course.courseName}
                           </div>
-                          <div className="truncate opacity-75">
-                            {getClientName(course.clientId)}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate opacity-75 flex-1 mr-2">
+                              {getClientName(course.clientId)}
+                            </span>
+                            <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                              course.status === 'pagado' ? 'bg-green-200 text-green-800' :
+                              course.status === 'facturado' ? 'bg-blue-200 text-blue-800' :
+                              course.status === 'dictado' ? 'bg-yellow-200 text-yellow-800' :
+                              'bg-gray-200 text-gray-800'
+                            }`}>
+                              {course.status === 'pagado' ? 'P' :
+                               course.status === 'facturado' ? 'F' :
+                               course.status === 'dictado' ? 'D' : 'C'}
+                            </span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs">
-                              {getStatusText(course.status)}
-                            </span>
-                            <span className="text-xs font-medium">
-                              {formatCurrency(course.totalValue)}
-                            </span>
+                          <div className="text-right mt-1">
+                            <div className="text-xs font-bold">
+                              {formatCurrency(calculateDailyValue(course))}/día
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -334,22 +411,22 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
       {/* Leyenda */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-        <h4 className="font-semibold text-gray-900 mb-3">Leyenda de Estados:</h4>
+        <h4 className="font-semibold text-gray-900 mb-3">Estados de Cursos:</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="flex items-center">
-            <div className="w-4 h-4 rounded border bg-gray-100 border-gray-300 mr-2"></div>
+            <span className="w-6 h-6 rounded bg-gray-200 text-gray-800 text-xs font-medium flex items-center justify-center mr-2">C</span>
             <span className="text-sm text-gray-700">Creado</span>
           </div>
           <div className="flex items-center">
-            <div className="w-4 h-4 rounded border bg-yellow-100 border-yellow-300 mr-2"></div>
+            <span className="w-6 h-6 rounded bg-yellow-200 text-yellow-800 text-xs font-medium flex items-center justify-center mr-2">D</span>
             <span className="text-sm text-gray-700">Dictado</span>
           </div>
           <div className="flex items-center">
-            <div className="w-4 h-4 rounded border bg-blue-100 border-blue-300 mr-2"></div>
+            <span className="w-6 h-6 rounded bg-blue-200 text-blue-800 text-xs font-medium flex items-center justify-center mr-2">F</span>
             <span className="text-sm text-gray-700">Facturado</span>
           </div>
           <div className="flex items-center">
-            <div className="w-4 h-4 rounded border bg-green-100 border-green-300 mr-2"></div>
+            <span className="w-6 h-6 rounded bg-green-200 text-green-800 text-xs font-medium flex items-center justify-center mr-2">P</span>
             <span className="text-sm text-gray-700">Pagado</span>
           </div>
         </div>

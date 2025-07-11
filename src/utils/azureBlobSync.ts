@@ -3,11 +3,10 @@ const AZURE_CONFIG = {
   storageAccount: 'cmfiles',
   containerName: 'capacitaciones',
   blobName: 'sistema_gestion_completo.json',
-  // URL completa con SAS Token válido hasta 2050
-  blobUrlWithSas: 'https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json?sp=rw&st=2025-06-25T14:02:06Z&se=2050-06-25T22:02:06Z&spr=https&sv=2024-11-04&sr=b&sig=brOzrK6Pj34fFUQdcm7AAY9sm%2Fr0OGHGZoR73G6Yaiw%3D',
-  get blobUrl() {
-    return `https://${this.storageAccount}.blob.core.windows.net/${this.containerName}/${this.blobName}`;
-  }
+  // URL pública para lectura
+  publicUrl: 'https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json',
+  // SAS Token para escritura
+  blobUrlWithSas: 'https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json?sp=racw&st=2025-07-11T01:17:09Z&se=2028-07-28T09:32:09Z&spr=https&sv=2024-11-04&sr=b&sig=%2BldzbqQsL35N2P4KSgUFIXMowCWL2rjkF50Uw4svfaw%3D'
 };
 
 export interface SyncData {
@@ -18,15 +17,14 @@ export interface SyncData {
   version: number;
 }
 
-
-
 /**
- * Descargar usando SAS Token (con autenticación automática)
+ * Cargar datos desde Azure Blob Storage (URL pública)
  */
-const downloadWithSasToken = async (): Promise<SyncData | null> => {
+export const loadDataFromAzure = async (): Promise<SyncData | null> => {
   try {
-    console.log('🔑 Descargando usando SAS Token...');
-    const response = await fetch(AZURE_CONFIG.blobUrlWithSas, {
+    console.log('🔄 Cargando datos desde Azure Blob Storage...');
+    
+    const response = await fetch(AZURE_CONFIG.publicUrl, {
       method: 'GET',
       headers: {
         'Cache-Control': 'no-cache'
@@ -36,93 +34,17 @@ const downloadWithSasToken = async (): Promise<SyncData | null> => {
     if (response.ok) {
       const text = await response.text();
       const data = JSON.parse(text);
-      console.log('✅ Descarga con SAS Token exitosa');
+      console.log('✅ Datos cargados exitosamente desde Azure:', {
+        courses: data.courses?.length || 0,
+        clients: data.clients?.length || 0,
+        invoices: data.invoices?.length || 0,
+        exportDate: data.exportDate
+      });
       return data;
     } else {
-      console.log('❌ Error en descarga con SAS Token, código:', response.status);
-      const errorText = await response.text();
-      console.log('📋 Error details:', errorText);
+      console.log('❌ Error cargando datos desde Azure:', response.status);
       return null;
     }
-  } catch (error) {
-    console.log('❌ Descarga con SAS Token falló:', error);
-    return null;
-  }
-};
-
-/**
- * Subir usando SAS Token - Múltiples estrategias para evitar CORS
- */
-const uploadWithSasToken = async (jsonString: string): Promise<boolean> => {
-  const strategies: Array<{name: string, headers: Record<string, string>}> = [
-    {
-      name: 'Estrategia 1: Headers requeridos por Azure',
-      headers: {
-        'x-ms-blob-type': 'BlockBlob',
-        'Content-Type': 'application/json'
-      }
-    },
-    {
-      name: 'Estrategia 2: Solo header obligatorio',
-      headers: {
-        'x-ms-blob-type': 'BlockBlob'
-      }
-    }
-  ];
-
-  for (const strategy of strategies) {
-    try {
-      console.log(`🔑 ${strategy.name}...`);
-      
-      const response = await fetch(AZURE_CONFIG.blobUrlWithSas, {
-        method: 'PUT',
-        headers: strategy.headers,
-        body: jsonString
-      });
-
-      console.log('📊 Respuesta:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
-      });
-
-      if (response.ok || response.status === 201) {
-        console.log(`✅ ${strategy.name} exitosa!`);
-        return true;
-      } else {
-        const errorText = await response.text();
-        console.log(`❌ ${strategy.name} falló:`, errorText);
-      }
-    } catch (error) {
-      console.log(`❌ Error en ${strategy.name}:`, error);
-    }
-  }
-  
-  return false;
-};
-
-/**
- * Cargar datos desde Azure Blob Storage
- */
-export const loadDataFromAzure = async (): Promise<SyncData | null> => {
-  try {
-    console.log('🔄 Cargando datos desde Azure Blob Storage...');
-    
-    // Usar SAS Token para descargar
-    const sasData = await downloadWithSasToken();
-    if (sasData) {
-      console.log('✅ Datos cargados exitosamente desde Azure:', {
-        courses: sasData.courses?.length || 0,
-        clients: sasData.clients?.length || 0,
-        invoices: sasData.invoices?.length || 0,
-        exportDate: sasData.exportDate
-      });
-      return sasData;
-    }
-
-    console.log('❌ No se pudo cargar datos desde Azure');
-    return null;
-    
   } catch (error) {
     console.error('❌ Error cargando datos desde Azure:', error);
     return null;
@@ -130,56 +52,33 @@ export const loadDataFromAzure = async (): Promise<SyncData | null> => {
 };
 
 /**
- * Guardar datos en Azure Blob Storage
+ * Guardar datos en Azure Blob Storage (con SAS Token)
  */
 export const saveDataToAzure = async (data: SyncData): Promise<boolean> => {
   try {
     console.log('🔄 Guardando datos en Azure Blob Storage...');
-    console.log('📊 Datos a enviar:', {
-      courses: data.courses.length,
-      clients: data.clients.length,
-      invoices: data.invoices.length,
-      exportDate: data.exportDate
-    });
-
-    // Convertir datos a string JSON
+    
     const jsonString = JSON.stringify(data, null, 2);
     
-    console.log('📤 Subiendo archivo a Azure Blob Storage...');
-    console.log('📍 URL con SAS Token configurada');
-    console.log('📏 Tamaño:', jsonString.length, 'caracteres');
-    
-    // Usar SAS Token para subir
-    const success = await uploadWithSasToken(jsonString);
-    
-    if (success) {
-      console.log('✅ Datos guardados exitosamente en Azure Blob Storage');
+    const response = await fetch(AZURE_CONFIG.blobUrlWithSas, {
+      method: 'PUT',
+      headers: {
+        'x-ms-blob-type': 'BlockBlob',
+        'Content-Type': 'application/json'
+      },
+      body: jsonString
+    });
+
+    if (response.ok || response.status === 201) {
+      console.log('✅ Datos guardados exitosamente en Azure');
       return true;
     } else {
-      console.log('❌ Subida con SAS Token falló');
+      const errorText = await response.text();
+      console.log('❌ Error guardando en Azure:', response.status, errorText.substring(0, 200));
       return false;
     }
-    
   } catch (error) {
     console.error('❌ Error guardando datos en Azure:', error);
-    return false;
-  }
-};
-
-/**
- * Verificar si el blob existe en Azure
- */
-export const checkBlobExists = async (): Promise<boolean> => {
-  try {
-    const response = await fetch(AZURE_CONFIG.blobUrlWithSas, {
-      method: 'HEAD'
-    });
-    
-    const exists = response.ok;
-    console.log('🔍 Verificación de existencia:', exists ? 'El blob existe' : 'El blob no existe');
-    return exists;
-  } catch (error) {
-    console.error('❌ Error verificando existencia del blob:', error);
     return false;
   }
 };
@@ -204,12 +103,6 @@ export const syncWithAzure = async (localData: SyncData): Promise<boolean> => {
     const localDate = new Date(localData.exportDate);
     const remoteDate = new Date(remoteData.exportDate);
     
-    console.log('📅 Comparando fechas:', {
-      local: localData.exportDate,
-      remoto: remoteData.exportDate,
-      localMasReciente: localDate > remoteDate
-    });
-    
     if (localDate > remoteDate || localData.version > remoteData.version) {
       // Los datos locales son más recientes
       console.log('🆙 Datos locales más recientes, subiendo a Azure...');
@@ -227,49 +120,175 @@ export const syncWithAzure = async (localData: SyncData): Promise<boolean> => {
     console.error('❌ Error en sincronización con Azure:', error);
     return false;
   }
+}; 
+
+/**
+ * Diagnosticar el estado de Azure Blob Storage
+ */
+export const diagnoseBlobStorage = async (): Promise<void> => {
+  console.log('🔍 === DIAGNÓSTICO DE AZURE BLOB STORAGE ===');
+  console.log('📋 Configuración actual:', {
+    storageAccount: AZURE_CONFIG.storageAccount,
+    containerName: AZURE_CONFIG.containerName,
+    blobName: AZURE_CONFIG.blobName,
+    publicUrl: AZURE_CONFIG.publicUrl,
+    sasTokenPresent: AZURE_CONFIG.blobUrlWithSas ? 'Sí' : 'No'
+  });
+
+  // Test 1: Probar conexión con URL pública
+  console.log('\n🔍 Test 1: Probando carga con URL pública...');
+  try {
+    const response = await fetch(AZURE_CONFIG.publicUrl, {
+      method: 'GET',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    });
+
+    if (response.ok) {
+      const text = await response.text();
+      const data = JSON.parse(text);
+      console.log('✅ URL pública funciona correctamente');
+      console.log('📊 Datos encontrados:', {
+        courses: data.courses?.length || 0,
+        clients: data.clients?.length || 0,
+        invoices: data.invoices?.length || 0,
+        exportDate: data.exportDate,
+        version: data.version
+      });
+    } else {
+      console.log('❌ Error con URL pública:', response.status, response.statusText);
+    }
+  } catch (error) {
+    console.error('❌ Error probando URL pública:', error);
+  }
+
+  // Test 2: Probar escritura con SAS Token
+  console.log('\n🔍 Test 2: Probando escritura con SAS Token...');
+  try {
+    const testData = {
+      test: true,
+      timestamp: new Date().toISOString(),
+      message: 'Test de diagnóstico'
+    };
+    
+    const testResponse = await fetch(AZURE_CONFIG.blobUrlWithSas, {
+      method: 'PUT',
+      headers: {
+        'x-ms-blob-type': 'BlockBlob',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(testData)
+    });
+
+    if (testResponse.ok || testResponse.status === 201) {
+      console.log('✅ SAS Token funciona correctamente para escritura');
+    } else {
+      const errorText = await testResponse.text();
+      console.log('❌ Error con SAS Token:', testResponse.status, testResponse.statusText);
+      console.log('❌ Detalle del error:', errorText.substring(0, 200));
+    }
+  } catch (error) {
+    console.error('❌ Error probando SAS Token:', error);
+  }
+
+  // Test 3: Probar sincronización completa
+  console.log('\n🔍 Test 3: Probando carga de datos...');
+  try {
+    const data = await loadDataFromAzure();
+    if (data) {
+      console.log('✅ Función loadDataFromAzure funciona correctamente');
+      console.log('📊 Datos cargados:', {
+        courses: data.courses?.length || 0,
+        clients: data.clients?.length || 0,
+        invoices: data.invoices?.length || 0
+      });
+    } else {
+      console.log('❌ loadDataFromAzure retornó null');
+    }
+  } catch (error) {
+    console.error('❌ Error en loadDataFromAzure:', error);
+  }
+
+  console.log('\n🔍 === FIN DEL DIAGNÓSTICO ===');
 };
 
 /**
- * Función de debugging para probar la conectividad
+ * Diagnosticar específicamente el SAS Token de Azure Blob Storage
  */
-export const saveDataToAzureAlternative = async (data: SyncData): Promise<boolean> => {
-  console.log('🔍 MODO DEBUG - Información de troubleshooting:');
-  console.log('🔗 URL del blob:', AZURE_CONFIG.blobUrl);
-  console.log('📦 Container:', AZURE_CONFIG.containerName);
-  console.log('📄 Blob name:', AZURE_CONFIG.blobName);
-  console.log('📊 Tamaño de datos:', JSON.stringify(data).length, 'caracteres');
+export const diagnoseSasToken = async (): Promise<void> => {
+  console.log('🔍 === DIAGNÓSTICO DEL SAS TOKEN ===');
   
-  try {
-    // Verificar si el blob es accesible
-    console.log('🧪 Probando acceso de lectura...');
-    const existingData = await loadDataFromAzure();
-    
-    if (existingData) {
-      console.log('✅ LECTURA FUNCIONA - Blob es accesible');
-      console.log('📋 Datos existentes:', {
-        courses: existingData.courses?.length || 0,
-        clients: existingData.clients?.length || 0,
-        invoices: existingData.invoices?.length || 0,
-        exportDate: existingData.exportDate
-      });
-    } else {
-      console.log('❌ Blob no es accesible para lectura');
-    }
-    
-    // Ahora probar ESCRITURA con CORS configurado
-    console.log('🧪 Probando ESCRITURA con CORS configurado...');
-    const writeSuccess = await saveDataToAzure(data);
-    
-    if (writeSuccess) {
-      console.log('🎉 ¡ESCRITURA EXITOSA! Azure Blob Storage completamente funcional');
-      return true;
-    } else {
-      console.log('❌ Escritura aún falla, revisar configuración CORS');
-      return false;
-    }
-    
-  } catch (error) {
-    console.error('❌ Error en debugging:', error);
-    return false;
+  // Verificar si el SAS Token está presente
+  if (!AZURE_CONFIG.blobUrlWithSas) {
+    console.log('❌ No hay SAS Token configurado');
+    return;
   }
+
+  // Extraer y analizar el SAS Token
+  const sasTokenMatch = AZURE_CONFIG.blobUrlWithSas.match(/\?(.+)$/);
+  if (sasTokenMatch) {
+    const sasParams = new URLSearchParams(sasTokenMatch[1]);
+    console.log('📋 Parámetros del SAS Token:');
+    sasParams.forEach((value, key) => {
+      if (key === 'se') {
+        const expiry = new Date(value);
+        const now = new Date();
+        const isExpired = expiry < now;
+        console.log(`  ${key}: ${value} (${isExpired ? '❌ EXPIRADO' : '✅ VÁLIDO'})`);
+      } else if (key === 'st') {
+        const start = new Date(value);
+        const now = new Date();
+        const isActive = start <= now;
+        console.log(`  ${key}: ${value} (${isActive ? '✅ ACTIVO' : '❌ AÚN NO ACTIVO'})`);
+      } else {
+        console.log(`  ${key}: ${value}`);
+      }
+    });
+  }
+
+  // Test de escritura con SAS Token
+  console.log('\n🔍 Probando escritura con SAS Token...');
+  try {
+    const testData = {
+      test: true,
+      timestamp: new Date().toISOString(),
+      message: 'Test específico de SAS Token'
+    };
+    
+    const response = await fetch(AZURE_CONFIG.blobUrlWithSas, {
+      method: 'PUT',
+      headers: {
+        'x-ms-blob-type': 'BlockBlob',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(testData)
+    });
+
+    console.log('📊 Respuesta del servidor:', {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries())
+    });
+
+    if (response.ok || response.status === 201) {
+      console.log('✅ SAS Token funciona correctamente');
+    } else {
+      const errorText = await response.text();
+      console.log('❌ Error con SAS Token:', errorText);
+      
+      // Análisis específico de errores comunes
+      if (response.status === 403) {
+        console.log('💡 Sugerencia: El SAS Token puede haber expirado o no tener permisos suficientes');
+      } else if (response.status === 404) {
+        console.log('💡 Sugerencia: Verifica que el container y blob existan');
+      } else if (response.status === 400) {
+        console.log('💡 Sugerencia: Verifica el formato del SAS Token');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error de red o configuración:', error);
+  }
+
+  console.log('\n🔍 === FIN DEL DIAGNÓSTICO DEL SAS TOKEN ===');
 }; 
