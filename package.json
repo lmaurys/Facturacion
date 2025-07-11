@@ -1,4 +1,4 @@
-{
+ {
   "name": "facturacion-profesional",
   "private": true,
   "version": "0.1.0",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "npm run build && swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410 --env production"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
