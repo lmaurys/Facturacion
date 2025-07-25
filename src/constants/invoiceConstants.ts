@@ -97,7 +97,7 @@ export const transferOptions: Record<TransferOption, {
     bankName: 'Banco Davivienda Panamá',
     bankAddress: 'Av Balboa y Calle 47 Trr Davivienda, Panamá City, Panamá',
     country: 'Panamá',
-    swiftCode: 'DAVPPAPAXXX',
+    swiftCode: 'CAFEPAPA',
     accountOwner: 'LUIS ORLANDO MAURY SANCHEZ',
     accountNumber: {
       es: 'Cuenta de Ahorros No. 010991023131',
@@ -110,7 +110,7 @@ export const transferOptions: Record<TransferOption, {
     bankName: 'Banco Davivienda',
     bankAddress: 'Av. El dorado No. 68 C 61 Bogotá-Colombia',
     country: 'Colombia',
-    swiftCode: 'CAFECOBBXXX',
+    swiftCode: 'CAFECOBB',
     accountOwner: 'LUIS ORLANDO MAURY SANCHEZ',
     accountNumber: {
       es: 'Cuenta de Ahorros No. 4515-7000-3298',

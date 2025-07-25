@@ -3,18 +3,36 @@ import InvoiceList from './InvoiceList';
 import InvoiceViewer from './InvoiceViewer';
 import InvoiceEditor from './InvoiceEditor';
 import { InvoiceFromCourse, Client, Course } from '../types';
-import { loadInvoices, deleteInvoice, loadClients, loadCourses } from '../utils/storage';
+import { loadInvoices, deleteInvoice, loadClients, loadCourses, debugCompleteSystem, forceReloadFromAzure } from '../utils/storage';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 
 const InvoiceManagement: React.FC = () => {
   const [invoices, setInvoices] = useState<InvoiceFromCourse[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [viewingInvoice, setViewingInvoice] = useState<InvoiceFromCourse | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceFromCourse | null>(null);
 
   useEffect(() => {
     loadAllData();
+    
+    // Listeners para eventos de sincronización
+    const handleSyncStart = () => setSyncStatus('syncing');
+    const handleSyncSuccess = () => setSyncStatus('success');
+    const handleSyncError = () => setSyncStatus('error');
+    
+    window.addEventListener('azureSyncStart', handleSyncStart);
+    window.addEventListener('azureSyncSuccess', handleSyncSuccess);
+    window.addEventListener('azureSyncError', handleSyncError);
+    
+    return () => {
+      window.removeEventListener('azureSyncStart', handleSyncStart);
+      window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
+      window.removeEventListener('azureSyncError', handleSyncError);
+    };
   }, []);
 
   const loadAllData = async () => {
@@ -32,6 +50,55 @@ const InvoiceManagement: React.FC = () => {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForceSync = async () => {
+    try {
+      setSyncing(true);
+      console.log('🔄 Forzando sincronización...');
+      const { syncWithAzure } = await import('../utils/storage');
+      const result = await syncWithAzure();
+      
+      if (result.success) {
+        console.log('✅ Sincronización forzada exitosa');
+        await loadAllData(); // Recargar datos después de sincronizar
+      } else {
+        console.error('❌ Error en sincronización forzada:', result.message);
+      }
+    } catch (error) {
+      console.error('❌ Error en sincronización forzada:', error);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleDiagnosticMode = () => {
+    console.log('🔍 Iniciando diagnóstico del sistema...');
+    debugCompleteSystem();
+  };
+
+  const handleForceReload = async () => {
+    try {
+      setSyncing(true);
+      setSyncStatus('syncing');
+      console.log('🔄 Forzando recarga completa desde Azure...');
+      
+      const success = await forceReloadFromAzure();
+      
+      if (success) {
+        console.log('✅ Recarga completa exitosa');
+        setSyncStatus('success');
+        await loadAllData(); // Recargar datos en el componente
+      } else {
+        console.error('❌ Error en recarga completa');
+        setSyncStatus('error');
+      }
+    } catch (error) {
+      console.error('❌ Error en recarga forzada:', error);
+      setSyncStatus('error');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -97,8 +164,6 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
     }
   };
 
-
-
   const handleCloseModals = () => {
     setViewingInvoice(null);
     setEditingInvoice(null);
@@ -130,6 +195,65 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
+        {/* Header con controles de sincronización */}
+        <div className="bg-white shadow-md rounded-lg p-4 mb-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold text-gray-900">Gestión de Facturas</h1>
+            <div className="flex items-center space-x-4">
+              {/* Indicador de estado de sincronización */}
+              <div className="flex items-center space-x-2">
+                {syncStatus === 'syncing' && (
+                  <div className="flex items-center text-blue-600">
+                    <RefreshCw className="animate-spin h-4 w-4 mr-2" />
+                    <span className="text-sm">Sincronizando...</span>
+                  </div>
+                )}
+                {syncStatus === 'success' && (
+                  <div className="flex items-center text-green-600">
+                    <span className="text-sm">✅ Sincronizado</span>
+                  </div>
+                )}
+                {syncStatus === 'error' && (
+                  <div className="flex items-center text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    <span className="text-sm">Error de sincronización</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Botón de sincronización forzada */}
+              <button
+                onClick={handleForceSync}
+                disabled={syncing}
+                className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-md flex items-center"
+                title="Forzar sincronización con Azure"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Sincronizando...' : 'Sincronizar'}
+              </button>
+              
+              {/* Botón de recarga completa */}
+              <button
+                onClick={handleForceReload}
+                disabled={syncing}
+                className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-md"
+                title="Forzar recarga completa desde Azure (usa esto si hay problemas de sincronización)"
+              >
+                🔄 Recargar Todo
+              </button>
+              
+              {/* Botón de diagnóstico */}
+              <button
+                onClick={handleDiagnosticMode}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                title="Ejecutar diagnóstico del sistema (revisa la consola)"
+              >
+                🔍 Diagnóstico
+              </button>
+            </div>
+          </div>
+        </div>
+
         <InvoiceList
           invoices={invoices}
           onView={handleViewInvoice}
@@ -160,8 +284,6 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
           onCancel={handleCloseModals}
         />
       )}
-
-
     </div>
   );
 };

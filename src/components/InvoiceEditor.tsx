@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { InvoiceFromCourse, Client, Course, Issuer, Language, TransferOption } from '../types';
-import { loadClients, loadCourses, updateInvoice } from '../utils/storage';
-import { Edit2, X, Save } from 'lucide-react';
+import { loadClients, loadCourses, updateInvoice, validateInvoiceUpdate, diagnoseInvoiceIssues } from '../utils/storage';
+import { Edit2, X, Save, AlertCircle } from 'lucide-react';
 import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
 
 interface InvoiceEditorProps {
@@ -61,21 +61,47 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
         observations: formData.observations
       };
 
-      console.log('Updating invoice with data:', invoiceDataToUpdate);
+      console.log('🔄 Actualizando factura con datos:', invoiceDataToUpdate);
+      console.log('🔍 Verificando emisor antes de actualizar:', {
+        original: invoice.issuer,
+        nuevo: formData.issuer
+      });
       
       const updatedInvoice = await updateInvoice(invoice.id, invoiceDataToUpdate);
 
       if (updatedInvoice) {
-        console.log('Invoice updated successfully:', updatedInvoice);
-        alert('Factura actualizada exitosamente');
+        console.log('✅ Factura actualizada exitosamente:', updatedInvoice);
+        console.log('🔍 Verificando emisor después de actualizar:', {
+          emisorEnRespuesta: updatedInvoice.issuer,
+          emisorEnFormulario: formData.issuer
+        });
+        
+        // Validar que todos los campos se guardaron correctamente
+        const isValid = await validateInvoiceUpdate(invoice.id, {
+          issuer: formData.issuer,
+          language: formData.language,
+          status: formData.status,
+          invoiceNumber: formData.invoiceNumber
+        });
+        
+        if (isValid) {
+          alert('✅ Factura actualizada exitosamente. Todos los campos se guardaron correctamente.');
+        } else {
+          console.warn('⚠️ Algunos campos no se actualizaron correctamente');
+          alert('⚠️ La factura se actualizó pero algunos campos podrían no haberse guardado correctamente. Revisa la consola para más detalles.');
+          
+          // Ejecutar diagnóstico específico si hay problemas
+          await diagnoseInvoiceIssues(invoice.id);
+        }
+        
         onSave();
       } else {
-        console.log('updateInvoice returned null');
-        alert('Error al actualizar la factura');
+        console.log('❌ updateInvoice retornó null');
+        alert('❌ Error al actualizar la factura. Intenta nuevamente.');
       }
     } catch (error) {
-      console.error('Error updating invoice:', error);
-      alert('Error al actualizar la factura');
+      console.error('❌ Error actualizando factura:', error);
+      alert('❌ Error al actualizar la factura. Revisa la consola para más detalles.');
     }
   };
 
@@ -105,13 +131,22 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
             <Edit2 className="mr-2" size={20} />
             Editar Factura {invoice.invoiceNumber}
           </h2>
-          <button
-            onClick={onCancel}
-            className="text-gray-400 hover:text-gray-600"
-            title="Cerrar"
-          >
-            <X size={24} />
-          </button>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => diagnoseInvoiceIssues(invoice.id)}
+              className="text-gray-500 hover:text-gray-700 flex items-center"
+              title="Diagnosticar problemas con esta factura (revisa la consola)"
+            >
+              <AlertCircle size={20} />
+            </button>
+            <button
+              onClick={onCancel}
+              className="text-gray-400 hover:text-gray-600"
+              title="Cerrar"
+            >
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">

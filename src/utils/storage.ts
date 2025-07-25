@@ -84,8 +84,8 @@ const autoSyncAfterChange = async () => {
     } else {
       console.log('❌ Sincronización automática falló, intentando método alternativo...');
       // Intentar método alternativo
-      const { saveDataToAzureAlternative } = await import('./azureBlobSync');
-      const altSuccess = await saveDataToAzureAlternative({
+      const { saveDataToAzure } = await import('./azureBlobSync');
+      const altSuccess = await saveDataToAzure({
         courses: localDataCache.courses,
         clients: localDataCache.clients,
         invoices: localDataCache.invoices,
@@ -867,19 +867,29 @@ export const addInvoice = async (invoiceData: Omit<InvoiceFromCourse, 'id'>): Pr
 
 export const updateInvoice = async (invoiceId: string, invoiceData: Omit<InvoiceFromCourse, 'id'>): Promise<InvoiceFromCourse | null> => {
   try {
-    console.log('updateInvoice called with:', { invoiceId, invoiceData });
-    console.log('Current invoices in cache:', localDataCache.invoices.length);
+    console.log('🔄 updateInvoice iniciado:', { invoiceId, invoiceData });
+    console.log('📊 Facturas actuales en cache:', localDataCache.invoices.length);
+    
+    // Verificar inicialización
+    if (!localDataCache.isInitialized) {
+      console.log('⚠️ Cache no inicializado, forzando inicialización...');
+      await initializeFromAzure();
+    }
     
     const invoiceIndex = localDataCache.invoices.findIndex(invoice => invoice.id === invoiceId);
     
-    console.log('Invoice index found:', invoiceIndex);
+    console.log('🔍 Índice de factura encontrado:', invoiceIndex);
     
     if (invoiceIndex === -1) {
-      console.log('Invoice not found with id:', invoiceId);
+      console.log('❌ Factura no encontrada con id:', invoiceId);
       return null;
     }
     
-    console.log('Original invoice:', localDataCache.invoices[invoiceIndex]);
+    console.log('📋 Factura original:', localDataCache.invoices[invoiceIndex]);
+    console.log('🔍 Cambio en emisor:', {
+      original: localDataCache.invoices[invoiceIndex].issuer,
+      nuevo: invoiceData.issuer
+    });
     
     const updatedInvoice: InvoiceFromCourse = {
       ...localDataCache.invoices[invoiceIndex],
@@ -887,20 +897,51 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
       id: invoiceId
     };
     
-    console.log('Updated invoice to save:', updatedInvoice);
+    console.log('✏️ Factura actualizada a guardar:', updatedInvoice);
+    console.log('🔍 Verificando emisor en factura actualizada:', updatedInvoice.issuer);
     
+    // Actualizar en cache local
     localDataCache.invoices[invoiceIndex] = updatedInvoice;
     
-    console.log('Invoice updated in cache, starting sync...');
+    console.log('✅ Factura actualizada en cache local');
+    console.log('🔍 Verificando emisor en cache después de actualizar:', localDataCache.invoices[invoiceIndex].issuer);
     
     // Sincronizar automáticamente con Azure
-    await autoSyncAfterChange();
+    console.log('🔄 Iniciando sincronización con Azure...');
+    try {
+      await autoSyncAfterChange();
+      console.log('✅ Sincronización con Azure completada');
+    } catch (syncError) {
+      console.error('❌ Error en sincronización con Azure:', syncError);
+      console.log('⚠️ Los cambios se guardaron localmente pero podrían no haberse sincronizado');
+      
+      // Intentar guardado directo como método alternativo
+      try {
+        console.log('🔄 Intentando guardado directo alternativo...');
+        const { saveDataToAzure } = await import('./azureBlobSync');
+        const altSuccess = await saveDataToAzure({
+          courses: localDataCache.courses,
+          clients: localDataCache.clients,
+          invoices: localDataCache.invoices,
+          exportDate: new Date().toISOString(),
+          version: 2
+        });
+        
+        if (altSuccess) {
+          console.log('✅ Sincronización alternativa exitosa');
+        } else {
+          console.log('❌ Sincronización alternativa también falló');
+        }
+      } catch (altError) {
+        console.error('❌ Error en sincronización alternativa:', altError);
+      }
+    }
     
-    console.log('Sync completed, returning updated invoice');
+    console.log('🎯 Retornando factura actualizada con emisor:', updatedInvoice.issuer);
     
     return updatedInvoice;
   } catch (error) {
-    console.error('Error updating invoice:', error);
+    console.error('❌ Error actualizando factura:', error);
     return null;
   }
 };
@@ -1078,4 +1119,119 @@ export const clearExampleData = (): void => {
   // Marcar como inicializado y actualizar timestamp
   localDataCache.isInitialized = true;
   localDataCache.lastUpdate = new Date().toISOString();
+}; 
+
+export const validateInvoiceUpdate = async (invoiceId: string, expectedData: Partial<InvoiceFromCourse>): Promise<boolean> => {
+  try {
+    console.log('🔍 Validando actualización de factura:', invoiceId);
+    
+    // Buscar la factura en el cache local
+    const cachedInvoice = localDataCache.invoices.find(inv => inv.id === invoiceId);
+    
+    if (!cachedInvoice) {
+      console.error('❌ Factura no encontrada en cache local');
+      return false;
+    }
+    
+    // Verificar cada campo esperado
+    let allFieldsValid = true;
+    
+    for (const [key, expectedValue] of Object.entries(expectedData)) {
+      const actualValue = (cachedInvoice as any)[key];
+      
+      if (actualValue !== expectedValue) {
+        console.error(`❌ Campo ${key} no coincide:`, {
+          esperado: expectedValue,
+          actual: actualValue
+        });
+        allFieldsValid = false;
+      } else {
+        console.log(`✅ Campo ${key} validado correctamente:`, actualValue);
+      }
+    }
+    
+    return allFieldsValid;
+  } catch (error) {
+    console.error('❌ Error validando actualización de factura:', error);
+    return false;
+  }
+};
+
+export const diagnoseInvoiceIssues = async (invoiceId: string): Promise<void> => {
+  try {
+    console.log('🔍 === DIAGNÓSTICO ESPECÍFICO DE FACTURA ===');
+    console.log('📋 ID de factura:', invoiceId);
+    
+    // Verificar en cache local
+    const cachedInvoice = localDataCache.invoices.find(inv => inv.id === invoiceId);
+    
+    if (cachedInvoice) {
+      console.log('✅ Factura encontrada en cache local:');
+      console.log('📋 Datos actuales:', cachedInvoice);
+      console.log('🔍 Emisor actual:', cachedInvoice.issuer);
+    } else {
+      console.error('❌ Factura NO encontrada en cache local');
+    }
+    
+    // Verificar en Azure
+    console.log('🔍 Verificando datos en Azure...');
+    const azureData = await loadDataFromAzure();
+    
+    if (azureData && azureData.invoices) {
+      const azureInvoice = azureData.invoices.find((inv: any) => inv.id === invoiceId);
+      
+      if (azureInvoice) {
+        console.log('✅ Factura encontrada en Azure:');
+        console.log('📋 Datos en Azure:', azureInvoice);
+        console.log('🔍 Emisor en Azure:', azureInvoice.issuer);
+        
+        // Comparar datos
+        if (cachedInvoice) {
+          console.log('🔍 Comparación Cache vs Azure:');
+          console.log('  - Emisor Cache:', cachedInvoice.issuer);
+          console.log('  - Emisor Azure:', azureInvoice.issuer);
+          console.log('  - ¿Coinciden?', cachedInvoice.issuer === azureInvoice.issuer ? '✅' : '❌');
+        }
+      } else {
+        console.error('❌ Factura NO encontrada en Azure');
+      }
+    } else {
+      console.error('❌ No se pudieron cargar datos de Azure');
+    }
+    
+    console.log('🔍 === FIN DIAGNÓSTICO ESPECÍFICO ===');
+  } catch (error) {
+    console.error('❌ Error en diagnóstico de factura:', error);
+  }
+}; 
+
+export const forceReloadFromAzure = async (): Promise<boolean> => {
+  try {
+    console.log('🔄 FORZANDO RECARGA COMPLETA DESDE AZURE...');
+    
+    // Limpiar cache local
+    localDataCache = {
+      courses: [],
+      clients: [],
+      invoices: [],
+      lastUpdate: new Date().toISOString(),
+      isInitialized: false
+    };
+    
+    console.log('🧹 Cache local limpiado');
+    
+    // Cargar datos frescos desde Azure
+    const success = await initializeFromAzure();
+    
+    if (success) {
+      console.log('✅ Recarga completa desde Azure exitosa');
+      return true;
+    } else {
+      console.error('❌ Error en recarga completa desde Azure');
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error en recarga forzada:', error);
+    return false;
+  }
 }; 
