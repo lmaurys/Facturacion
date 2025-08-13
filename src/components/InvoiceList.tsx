@@ -266,14 +266,14 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
 
   return (
     <div className="bg-white shadow-md rounded-lg p-6">
-      <div className="flex justify-between items-center mb-4 md:mb-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 md:mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestión de Facturas</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-gray-900">Listado de Facturas</h2>
           <p className="text-sm text-gray-600 mt-1">
-            Visualiza, edita y gestiona todas tus facturas existentes
+            Visualiza, edita y gestiona tus facturas existentes
           </p>
         </div>
-        <div className="text-right flex items-center space-x-3">
+        <div className="mt-3 md:mt-0 text-left md:text-right flex items-center space-x-3">
           <button
             onClick={() => setFiltersOpen(prev => !prev)}
             className="md:hidden border px-3 py-2 rounded text-gray-700 hover:bg-gray-50 flex items-center"
