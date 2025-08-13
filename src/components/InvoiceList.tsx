@@ -43,6 +43,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey | null>('invoiceNumber');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -265,14 +266,21 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
 
   return (
     <div className="bg-white shadow-md rounded-lg p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4 md:mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gestión de Facturas</h2>
           <p className="text-sm text-gray-600 mt-1">
             Visualiza, edita y gestiona todas tus facturas existentes
           </p>
         </div>
-        <div className="text-right">
+        <div className="text-right flex items-center space-x-3">
+          <button
+            onClick={() => setFiltersOpen(prev => !prev)}
+            className="md:hidden border px-3 py-2 rounded text-gray-700 hover:bg-gray-50 flex items-center"
+            title="Mostrar/ocultar filtros"
+          >
+            <Filter className="mr-2" size={16} /> Filtros
+          </button>
           <p className="text-sm text-gray-500">
             Total: <span className="font-medium">{invoices.length}</span> facturas
           </p>
@@ -306,7 +314,7 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
       </div>
 
       {/* Filtros */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+      <div className={`mb-4 md:mb-6 p-4 bg-gray-50 rounded-lg ${filtersOpen ? 'block' : 'hidden'} md:block`}>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Búsqueda */}
           <div className="relative">
@@ -390,9 +398,63 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <>
+          {/* Vista móvil en tarjetas */}
+          <div className="block md:hidden space-y-3">
+            {filteredAndSortedInvoices.map((invoice) => (
+              <div key={invoice.id} className="border rounded-lg p-3 bg-white">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">{invoice.invoiceNumber}</div>
+                    <div className="text-xs text-gray-600 mt-1">{getClientName(invoice.clientId)}</div>
+                    <div className="text-xs text-gray-600">{formatDate(invoice.invoiceDate)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold">{formatCurrency(invoice.total)}</div>
+                    <span className={`${getStatusBadge(invoice.status)} mt-1 inline-block`}>{getStatusText(invoice.status)}</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-2">
+                  {getQuickActionButtons(invoice)}
+                  <div className="w-px h-6 bg-gray-300 mx-1" />
+                  <button
+                    onClick={() => onView(invoice)}
+                    className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"
+                    title="Ver factura"
+                  >
+                    <Eye size={14} />
+                  </button>
+                  <button
+                    onClick={() => onEdit(invoice)}
+                    className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
+                    title="Editar factura"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteInvoice(invoice)}
+                    className={`p-1 rounded ${
+                      invoice.status === 'paid'
+                        ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                        : 'text-red-600 hover:text-red-900 hover:bg-red-50'
+                    }`}
+                    title={
+                      invoice.status === 'paid'
+                        ? 'Eliminar factura pagada (requiere confirmación especial)'
+                        : 'Eliminar factura'
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabla en escritorio */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th 
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-1/8"
@@ -446,8 +508,8 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
                   Acciones
                 </th>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedInvoices.map((invoice) => {
                 const courseNames = getCourseNames(invoice.courseIds);
                 return (
@@ -501,7 +563,7 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
                       </div>
                     </td>
                     <td className="px-3 py-4 text-right">
-                      <div className="flex justify-end space-x-1">
+                      <div className="flex justify-end gap-2 flex-wrap">
                         {/* Botones de acción rápida para cambio de estado */}
                         {getQuickActionButtons(invoice)}
                         
@@ -545,9 +607,10 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

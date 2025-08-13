@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Course, Client } from '../types';
-import { X, Save, Plus } from 'lucide-react';
+import { X, Save, Plus, ArrowUp } from 'lucide-react';
 import { loadClients } from '../utils/storage';
 
 interface CourseFormProps {
@@ -28,6 +28,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
   });
 
   const [clients, setClients] = useState<Client[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
     // Cargar clientes al montar el componente
@@ -37,6 +39,15 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     };
     
     loadClientsAsync();
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setShowScrollTop(el.scrollTop > 300);
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true } as any);
+    return () => el.removeEventListener('scroll', onScroll as any);
   }, []);
 
   useEffect(() => {
@@ -71,7 +82,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div ref={scrollRef} className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-900">
             {isEditing ? 'Editar Curso' : 'Nuevo Curso'}
@@ -346,6 +357,17 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
             </button>
           </div>
         </form>
+
+        {showScrollTop && (
+          <button
+            onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label="Volver arriba"
+            title="Volver arriba"
+            className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
       </div>
     </div>
   );

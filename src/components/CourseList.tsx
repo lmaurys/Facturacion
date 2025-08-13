@@ -22,6 +22,7 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // Cargar clientes para mostrar los nombres
@@ -174,19 +175,28 @@ Escribe "CONFIRMAR" para proceder:`;
 
   return (
     <div className="bg-white shadow-md rounded-lg p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4 md:mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Registro de Cursos</h2>
-        <button
-          onClick={onAdd}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
-        >
-          <Plus className="mr-2" size={20} />
-          Nuevo Curso
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setFiltersOpen(prev => !prev)}
+            className="md:hidden border px-3 py-2 rounded text-gray-700 hover:bg-gray-50 flex items-center"
+            title="Mostrar/ocultar filtros"
+          >
+            <Filter className="mr-2" size={16} /> Filtros
+          </button>
+          <button
+            onClick={onAdd}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
+          >
+            <Plus className="mr-2" size={20} />
+            Nuevo Curso
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+      <div className={`mb-4 md:mb-6 p-4 bg-gray-50 rounded-lg ${filtersOpen ? 'block' : 'hidden'} md:block`}>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Búsqueda */}
           <div className="relative">
@@ -272,9 +282,57 @@ Escribe "CONFIRMAR" para proceder:`;
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <>
+          {/* Vista móvil en tarjetas */}
+          <div className="block md:hidden space-y-3">
+            {filteredAndSortedCourses.map((course) => (
+              <div key={course.id} className="border rounded-lg p-3 bg-white">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">{course.courseName}</div>
+                    <div className="text-xs text-gray-600 mt-1">{getClientName(course.clientId)}</div>
+                    <div className="text-xs text-gray-600">{formatDate(course.startDate)} → {formatDate(course.endDate)}</div>
+                    {course.observations && (
+                      <div className="text-[11px] text-gray-500 mt-1">{course.observations}</div>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold">{formatCurrency(course.totalValue)}</div>
+                    <span className={`${getStatusBadge(course.status)}`}>{getStatusText(course.status)}</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-2">
+                  <button
+                    onClick={() => onEdit(course)}
+                    className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
+                    title="Editar curso"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCourse(course)}
+                    className={`p-1 rounded ${
+                      course.status === 'facturado' || course.status === 'pagado'
+                        ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                        : 'text-red-600 hover:text-red-900 hover:bg-red-50'
+                    }`}
+                    title={
+                      course.status === 'facturado' || course.status === 'pagado'
+                        ? 'Eliminar curso facturado (requiere confirmación especial)'
+                        : 'Eliminar curso'
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabla en escritorio */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th 
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-1/4"
@@ -343,8 +401,8 @@ Escribe "CONFIRMAR" para proceder:`;
                   Acciones
                 </th>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedCourses.map((course) => (
                 <tr key={course.id} className="hover:bg-gray-50">
                   <td className="px-3 py-4">
@@ -421,7 +479,7 @@ Escribe "CONFIRMAR" para proceder:`;
                     )}
                   </td>
                   <td className="px-3 py-4 text-right">
-                    <div className="flex justify-end space-x-1">
+                    <div className="flex justify-end gap-2 flex-wrap">
                       <button
                         onClick={() => onEdit(course)}
                         className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
@@ -448,9 +506,10 @@ Escribe "CONFIRMAR" para proceder:`;
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

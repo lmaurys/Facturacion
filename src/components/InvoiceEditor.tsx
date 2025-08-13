@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { InvoiceFromCourse, Client, Course, Issuer, Language, TransferOption } from '../types';
 import { loadClients, loadCourses, updateInvoice, validateInvoiceUpdate, diagnoseInvoiceIssues } from '../utils/storage';
-import { Edit2, X, Save, AlertCircle } from 'lucide-react';
+import { Edit2, X, Save, AlertCircle, ArrowUp } from 'lucide-react';
 import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
 
 interface InvoiceEditorProps {
@@ -13,6 +13,8 @@ interface InvoiceEditorProps {
 const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [formData, setFormData] = useState({
     clientId: invoice.clientId,
     invoiceNumber: invoice.invoiceNumber,
@@ -36,6 +38,16 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     };
     
     loadData();
+  }, []);
+
+  // Mostrar FAB para subir dentro del modal cuando el contenido hace scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setShowScrollTop(el.scrollTop > 300);
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true } as any);
+    return () => el.removeEventListener('scroll', onScroll as any);
   }, []);
 
   const relatedCourses = courses.filter(course => 
@@ -125,7 +137,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div ref={scrollRef} className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-900 flex items-center">
             <Edit2 className="mr-2" size={20} />
@@ -367,6 +379,17 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
             </button>
           </div>
         </form>
+
+        {showScrollTop && (
+          <button
+            onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label="Volver arriba"
+            title="Volver arriba"
+            className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
       </div>
     </div>
   );

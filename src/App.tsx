@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Printer, Download, FileText, GraduationCap, Building, Database, BarChart3 } from 'lucide-react';
+import { Printer, Download, FileText, GraduationCap, Building, Database, BarChart3, Menu, X, ArrowUp } from 'lucide-react';
 import InvoiceForm from './components/InvoiceForm';
 import InvoicePreview from './components/InvoicePreview';
 import CourseManagement from './components/CourseManagement';
@@ -36,6 +36,9 @@ const App: React.FC = () => {
   const [selectedIssuer, setSelectedIssuer] = useState<Issuer>('colombia');
   const [language, setLanguage] = useState<Language>('es');
   const [selectedTransfer, setSelectedTransfer] = useState<TransferOption>('usa');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [hasScrolled, setHasScrolled] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const invoiceRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +82,18 @@ const App: React.FC = () => {
     return () => {
       clearTimeout(timer);
     };
+  }, []);
+
+  // Detectar scroll para sombrear el header sticky
+  React.useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY;
+      setHasScrolled(y > 2);
+      setShowScrollTop(y > 300);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   // Sincronizar la opción de transferencia con el invoice
@@ -332,7 +347,7 @@ const App: React.FC = () => {
                   paymentTerms={paymentTerms}
                 />
               </div>
-              <div className="mt-4 flex justify-end space-x-4">
+              <div className="mt-4 flex flex-wrap justify-end gap-3">
                 <button
                   onClick={handlePrint}
                   className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded flex items-center"
@@ -358,7 +373,9 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Navigation Header */}
-      <nav className="bg-white shadow-sm border-b border-gray-200">
+      <nav className={`sticky top-0 z-50 bg-white border-b border-gray-200 ${hasScrolled ? 'shadow-md' : 'shadow-sm'}`}
+        onScrollCapture={() => {}}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
@@ -366,7 +383,18 @@ const App: React.FC = () => {
                 Sistema de Gestión Profesional
               </h1>
             </div>
-            <div className="flex space-x-4">
+            {/* Botón menú móvil */}
+            <div className="md:hidden">
+              <button
+                onClick={() => setMobileMenuOpen(prev => !prev)}
+                aria-label="Abrir menú"
+                className="inline-flex items-center justify-center p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+            </div>
+            {/* Menú de escritorio */}
+            <div className="hidden md:flex space-x-2 lg:space-x-4">
               <button
                 onClick={() => setCurrentMode('clients')}
                 className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -436,6 +464,32 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+        {/* Menú móvil desplegable */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-gray-200 bg-white">
+            <div className="px-2 pt-2 pb-3 space-y-1">
+              {([
+                { key: 'clients', label: 'Clientes', icon: <Building className="mr-2" size={16} /> },
+                { key: 'courses', label: 'Cursos', icon: <GraduationCap className="mr-2" size={16} /> },
+                { key: 'invoicing', label: 'Facturación', icon: <FileText className="mr-2" size={16} /> },
+                { key: 'invoices', label: 'Facturas', icon: <FileText className="mr-2" size={16} /> },
+                { key: 'analytics', label: 'Análisis', icon: <BarChart3 className="mr-2" size={16} /> },
+                { key: 'data', label: 'Datos', icon: <Database className="mr-2" size={16} /> },
+              ] as const).map(item => (
+                <button
+                  key={item.key}
+                  onClick={() => { setCurrentMode(item.key as any); setMobileMenuOpen(false); }}
+                  className={`w-full flex items-center px-3 py-2 rounded-md text-left text-sm ${
+                    currentMode === item.key ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Main Content */}
@@ -447,6 +501,17 @@ const App: React.FC = () => {
           onGenerateInvoice={handleGenerateInvoiceFromCourses}
           onClose={() => setShowInvoiceFromCourses(false)}
         />
+      )}
+
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Volver arriba"
+          title="Volver arriba"
+          className="fixed bottom-4 right-4 md:bottom-6 md:right-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <ArrowUp size={20} />
+        </button>
       )}
     </div>
   );
