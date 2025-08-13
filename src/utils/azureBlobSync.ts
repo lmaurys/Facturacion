@@ -13,6 +13,7 @@ export interface SyncData {
   courses: any[];
   clients: any[];
   invoices: any[];
+  blackouts?: any[];
   exportDate: string;
   version: number;
 }

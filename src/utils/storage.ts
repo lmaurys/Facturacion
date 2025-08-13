@@ -1,4 +1,4 @@
-import { Course, Client, InvoiceFromCourse } from '../types';
+import { Course, Client, InvoiceFromCourse, Blackout } from '../types';
 import { loadDataFromAzure, saveDataToAzure, syncWithAzure as azureSync } from './azureBlobSync';
 
 // Azure como única fuente de verdad
@@ -6,12 +6,14 @@ let localDataCache: {
   courses: Course[];
   clients: Client[];
   invoices: InvoiceFromCourse[];
+  blackouts: Blackout[];
   lastUpdate: string;
   isInitialized: boolean;
 } = {
   courses: [],
   clients: [],
   invoices: [],
+  blackouts: [],
   lastUpdate: new Date().toISOString(),
   isInitialized: false
 };
@@ -30,6 +32,7 @@ export const forceSaveToAzure = async (): Promise<boolean> => {
       courses: localDataCache.courses,
       clients: localDataCache.clients,
       invoices: localDataCache.invoices,
+      blackouts: localDataCache.blackouts,
       exportDate: new Date().toISOString(),
       version: 2
     };
@@ -89,6 +92,7 @@ const autoSyncAfterChange = async () => {
         courses: localDataCache.courses,
         clients: localDataCache.clients,
         invoices: localDataCache.invoices,
+        blackouts: localDataCache.blackouts,
         exportDate: new Date().toISOString(),
         version: 2
       });
@@ -307,6 +311,7 @@ export const initializeFromAzure = async (): Promise<boolean> => {
         courses: uniqueCourses,
         clients: uniqueClients,
         invoices: uniqueInvoices,
+        blackouts: (azureData as any).blackouts || [],
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
@@ -335,6 +340,7 @@ export const initializeFromAzure = async (): Promise<boolean> => {
         courses: [],
         clients: [],
         invoices: [],
+        blackouts: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: true
       };
@@ -375,6 +381,7 @@ export const emergencyLoadFromAzure = async (): Promise<boolean> => {
         courses: azureData.courses || [],
         clients: azureData.clients || [],
         invoices: azureData.invoices || [],
+        blackouts: (azureData as any).blackouts || [],
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
@@ -490,6 +497,7 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
         courses: [],
         clients: [],
         invoices: [],
+        blackouts: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: true
       };
@@ -1038,6 +1046,63 @@ export const getAvailableCoursesForInvoicing = async (clientId?: string): Promis
   });
 };
 
+// ========================= BLACKOUTS =========================
+
+export const loadBlackouts = async (): Promise<Blackout[]> => {
+  return localDataCache.blackouts;
+};
+
+export const addBlackout = async (data: Omit<Blackout, 'id'>): Promise<Blackout | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+    const newBlackout: Blackout = {
+      ...data,
+      id: `blackout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    };
+    localDataCache.blackouts.push(newBlackout);
+    const saveSuccess = await forceSaveToAzure();
+    if (!saveSuccess) {
+      console.warn('⚠️ No se pudo sincronizar blackout, se mantiene en cache local');
+    }
+    window.dispatchEvent(new CustomEvent('blackoutUpdated'));
+    return newBlackout;
+  } catch (error) {
+    console.error('❌ Error al agregar blackout:', error);
+    return null;
+  }
+};
+
+export const deleteBlackout = async (blackoutId: string): Promise<boolean> => {
+  try {
+    const initial = localDataCache.blackouts.length;
+    localDataCache.blackouts = localDataCache.blackouts.filter(b => b.id !== blackoutId);
+    if (localDataCache.blackouts.length === initial) return false;
+    await autoSyncAfterChange();
+    window.dispatchEvent(new CustomEvent('blackoutUpdated'));
+    return true;
+  } catch (error) {
+    console.error('❌ Error eliminando blackout:', error);
+    return false;
+  }
+};
+
+export const updateBlackout = async (blackoutId: string, data: Omit<Blackout, 'id'>): Promise<Blackout | null> => {
+  try {
+    const i = localDataCache.blackouts.findIndex(b => b.id === blackoutId);
+    if (i === -1) return null;
+    const updated: Blackout = { ...localDataCache.blackouts[i], ...data, id: blackoutId };
+    localDataCache.blackouts[i] = updated;
+    await autoSyncAfterChange();
+    window.dispatchEvent(new CustomEvent('blackoutUpdated'));
+    return updated;
+  } catch (error) {
+    console.error('❌ Error actualizando blackout:', error);
+    return null;
+  }
+};
+
 // ========================= SYNC FUNCTIONS =========================
 
 // Inicializar sincronización automática cada X minutos
@@ -1210,10 +1275,11 @@ export const forceReloadFromAzure = async (): Promise<boolean> => {
     console.log('🔄 FORZANDO RECARGA COMPLETA DESDE AZURE...');
     
     // Limpiar cache local
-    localDataCache = {
+      localDataCache = {
       courses: [],
       clients: [],
       invoices: [],
+        blackouts: [],
       lastUpdate: new Date().toISOString(),
       isInitialized: false
     };

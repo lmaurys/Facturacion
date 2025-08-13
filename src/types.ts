@@ -65,6 +65,14 @@ export type Issuer = 'colombia' | 'usa';
 
 export type Language = 'es' | 'en';
 
+export interface Blackout {
+  id: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  reason: string;
+  type: 'personal' | 'holiday' | 'travel' | 'other';
+}
+
 export const issuers: Record<Issuer, {
   name: string;
   nit: string;

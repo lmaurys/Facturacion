@@ -16,6 +16,7 @@ interface AnalyticsData {
     draft: number;
     sent: number;
     paid: number;
+    expectedBilling: number;
   }>;
   coursesStatusDistribution: Array<{ name: string; value: number; count: number; color: string }>;
 }
@@ -108,6 +109,14 @@ const InvoiceAnalytics: React.FC = () => {
     ].filter(item => item.value > 0); // Solo mostrar estados con valor
 
     // 4. Top clientes con segmentación por estado
+    //    y cálculo de facturación esperada (cursos creados + dictados)
+    const expectedBillingByClient = new Map<string, number>();
+    yearCourses
+      .filter(c => c.status === 'creado' || c.status === 'dictado')
+      .forEach(course => {
+        const current = expectedBillingByClient.get(course.clientId) || 0;
+        expectedBillingByClient.set(course.clientId, current + course.totalValue);
+      });
     const clientTotals = new Map<string, { 
       total: number; 
       invoices: number; 
@@ -115,13 +124,14 @@ const InvoiceAnalytics: React.FC = () => {
       draft: number;
       sent: number;
       paid: number;
+      expectedBilling: number;
     }>();
     
     yearInvoices.forEach(invoice => {
       const client = clients.find(c => c.id === invoice.clientId);
       const clientName = client ? client.name : 'Cliente no encontrado';
       
-      if (clientTotals.has(invoice.clientId)) {
+        if (clientTotals.has(invoice.clientId)) {
         const current = clientTotals.get(invoice.clientId)!;
         current.total += invoice.total;
         current.invoices += 1;
@@ -134,16 +144,22 @@ const InvoiceAnalytics: React.FC = () => {
         } else if (invoice.status === 'paid') {
           current.paid += invoice.total;
         }
-      } else {
+        } else {
         clientTotals.set(invoice.clientId, {
           total: invoice.total,
           invoices: 1,
           name: clientName,
           draft: invoice.status === 'draft' ? invoice.total : 0,
           sent: invoice.status === 'sent' ? invoice.total : 0,
-          paid: invoice.status === 'paid' ? invoice.total : 0
+            paid: invoice.status === 'paid' ? invoice.total : 0,
+            expectedBilling: expectedBillingByClient.get(invoice.clientId) || 0
         });
       }
+    });
+
+    // Completar el valor de facturación esperada para clientes ya agregados
+    clientTotals.forEach((value, clientId) => {
+      value.expectedBilling = expectedBillingByClient.get(clientId) || 0;
     });
 
     const topClients = Array.from(clientTotals.values())
@@ -212,6 +228,13 @@ const InvoiceAnalytics: React.FC = () => {
     ).length;
   };
 
+  const getExpectedBillingTotal = () => {
+    return courses
+      .filter(course => new Date(course.startDate).getFullYear() === selectedYear)
+      .filter(course => course.status === 'creado' || course.status === 'dictado')
+      .reduce((sum, course) => sum + course.totalValue, 0);
+  };
+
   const getAvailableYears = () => {
     const allYears = [
       ...invoices.map(inv => new Date(inv.invoiceDate).getFullYear()),
@@ -273,7 +296,7 @@ const InvoiceAnalytics: React.FC = () => {
           </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-lg p-4 text-white">
             <div className="flex items-center justify-between">
               <div>
@@ -311,6 +334,16 @@ const InvoiceAnalytics: React.FC = () => {
                 <p className="text-2xl font-bold">{getTotalCourses()}</p>
               </div>
               <Calendar size={32} className="text-orange-200" />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg p-4 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-amber-100 text-sm">Facturación Esperada</p>
+                <p className="text-2xl font-bold">{formatCurrency(getExpectedBillingTotal())}</p>
+              </div>
+              <TrendingUp size={32} className="text-amber-200" />
             </div>
           </div>
         </div>
@@ -439,6 +472,13 @@ const InvoiceAnalytics: React.FC = () => {
                     <span>{client.invoices} factura(s)</span>
                     <span className="font-bold text-xl text-gray-900">{formatCurrency(client.total)}</span>
                   </div>
+            {client.expectedBilling > 0 && (
+              <div className="mt-1 text-xs">
+                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                  Esperada: {formatCurrency(client.expectedBilling)}
+                </span>
+              </div>
+            )}
                 </div>
               </div>
               

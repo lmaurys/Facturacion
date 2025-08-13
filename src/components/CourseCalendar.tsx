@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Course, Client } from '../types';
-import { loadCourses, loadClients } from '../utils/storage';
-import { ChevronLeft, ChevronRight, Calendar, Clock, User, DollarSign } from 'lucide-react';
+import { Course, Client, Blackout } from '../types';
+import { loadCourses, loadClients, loadBlackouts, addBlackout, deleteBlackout } from '../utils/storage';
+import { ChevronLeft, ChevronRight, Calendar, Clock, User, DollarSign, Ban, Plus } from 'lucide-react';
 
 interface CourseCalendarProps {
   onCourseClick?: (course: Course) => void;
@@ -13,16 +13,24 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string>('');
+  const [blackouts, setBlackouts] = useState<Blackout[]>([]);
+  const [showBlackoutForm, setShowBlackoutForm] = useState(false);
+  const [newBlackout, setNewBlackout] = useState<{ startDate: string; endDate: string; reason: string; type: Blackout['type'] }>({ startDate: '', endDate: '', reason: '', type: 'personal' });
+  const [showBlackoutList, setShowBlackoutList] = useState(false);
+  const [blackoutListTitle, setBlackoutListTitle] = useState('');
+  const [blackoutsForDay, setBlackoutsForDay] = useState<Blackout[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [loadedCourses, loadedClients] = await Promise.all([
+        const [loadedCourses, loadedClients, loadedBlackouts] = await Promise.all([
           loadCourses(),
-          loadClients()
+          loadClients(),
+          loadBlackouts()
         ]);
         setCourses(loadedCourses);
         setClients(loadedClients);
+        setBlackouts(loadedBlackouts);
         
         // Obtener fecha de última actualización
         const storedLastUpdate = localStorage.getItem('lastDataUpdate');
@@ -56,10 +64,15 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
     window.addEventListener('azureSyncSuccess', handleSyncSuccess);
     window.addEventListener('storage', handleStorageChange);
+    const handleBlackoutUpdate = () => {
+      loadBlackouts().then(setBlackouts);
+    };
+    window.addEventListener('blackoutUpdated', handleBlackoutUpdate as any);
     
     return () => {
       window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('blackoutUpdated', handleBlackoutUpdate as any);
     };
   }, []);
 
@@ -188,6 +201,78 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     });
   };
 
+  // Días de un curso que caen dentro del mes visible
+  const getOverlappingDaysInMonth = (course: Course): number => {
+    const start = createLocalDate(course.startDate);
+    const end = createLocalDate(course.endDate);
+    const monthStart = new Date(firstDayOfMonth.getFullYear(), firstDayOfMonth.getMonth(), firstDayOfMonth.getDate());
+    const monthEnd = new Date(lastDayOfMonth.getFullYear(), lastDayOfMonth.getMonth(), lastDayOfMonth.getDate());
+    const overlapStart = start > monthStart ? start : monthStart;
+    const overlapEnd = end < monthEnd ? end : monthEnd;
+    if (overlapEnd < overlapStart) return 0;
+    const diffMs = new Date(overlapEnd.getFullYear(), overlapEnd.getMonth(), overlapEnd.getDate()).getTime() -
+                   new Date(overlapStart.getFullYear(), overlapStart.getMonth(), overlapStart.getDate()).getTime();
+    // +1 día porque es inclusivo
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+  };
+
+  // Valor del mes (prorrateado por días dentro del mes)
+  const getMonthlyValueForCourse = (course: Course): number => {
+    const daily = calculateDailyValue(course);
+    const days = getOverlappingDaysInMonth(course);
+    return daily * days;
+  };
+
+  // Blackouts del mes actual
+  const blackoutsInMonth = blackouts.filter(b => {
+    const start = createLocalDate(b.startDate);
+    const end = createLocalDate(b.endDate);
+    const monthStart = new Date(firstDayOfMonth.getFullYear(), firstDayOfMonth.getMonth(), firstDayOfMonth.getDate());
+    const monthEnd = new Date(lastDayOfMonth.getFullYear(), lastDayOfMonth.getMonth(), lastDayOfMonth.getDate());
+    return start <= monthEnd && end >= monthStart;
+  });
+
+  const isDayInBlackout = (day: number): Blackout[] => {
+    const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    const d = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
+    return blackoutsInMonth.filter(b => {
+      const s = createLocalDate(b.startDate);
+      const e = createLocalDate(b.endDate);
+      const sn = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+      const en = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+      return d >= sn && d <= en;
+    });
+  };
+
+  const openBlackoutList = (day: number) => {
+    const list = isDayInBlackout(day);
+    setBlackoutsForDay(list);
+    setBlackoutListTitle(
+      `${day} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`
+    );
+    setShowBlackoutList(true);
+  };
+
+  const handleDeleteBlackout = async (id: string) => {
+    const ok = await deleteBlackout(id);
+    if (ok) {
+      const latest = await loadBlackouts();
+      setBlackouts(latest);
+      setBlackoutsForDay(prev => prev.filter(b => b.id !== id));
+    }
+  };
+
+  const saveNewBlackout = async () => {
+    if (!newBlackout.startDate || !newBlackout.endDate || !newBlackout.reason) return;
+    const created = await addBlackout({ ...newBlackout });
+    if (created) {
+      setShowBlackoutForm(false);
+      setNewBlackout({ startDate: '', endDate: '', reason: '', type: 'personal' });
+      const latest = await loadBlackouts();
+      setBlackouts(latest);
+    }
+  };
+
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
       const newDate = new Date(prev);
@@ -276,6 +361,13 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
           >
             <ChevronRight size={20} />
           </button>
+          <button
+            onClick={() => setShowBlackoutForm(true)}
+            className="ml-2 p-2 bg-red-50 text-red-700 rounded-md hover:bg-red-100 flex items-center"
+            title="Agregar fecha de bloqueo"
+          >
+            <Plus size={16} className="mr-1" /> Bloqueo
+          </button>
         </div>
       </div>
 
@@ -298,7 +390,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
               <span className="ml-2 text-sm font-medium text-green-600">Valor Total</span>
             </div>
             <span className="text-xl font-bold text-green-900">
-              {formatCurrency(coursesInMonth.reduce((sum, course) => sum + course.totalValue, 0))}
+              {formatCurrency(coursesInMonth.reduce((sum, course) => sum + getMonthlyValueForCourse(course), 0))}
             </span>
           </div>
         </div>
@@ -331,6 +423,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
         <div className="grid grid-cols-7">
           {calendarDays.map((day, index) => {
             const coursesForDay = day ? getCoursesForDay(day) : [];
+            const blackoutsForDay = day ? isDayInBlackout(day) : [];
             const isToday = day && 
               new Date().getDate() === day && 
               new Date().getMonth() === currentDate.getMonth() && 
@@ -339,7 +432,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
             return (
               <div
                 key={index}
-                className={`min-h-[100px] p-2 border-r border-b border-gray-200 last:border-r-0 ${
+                className={`min-h-[110px] p-2 border-r border-b border-gray-200 last:border-r-0 ${
                   day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
                 } ${isToday ? 'bg-blue-50' : ''}`}
               >
@@ -356,7 +449,25 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
                       )}
                     </div>
                     
-                    <div className="space-y-1">
+                    {blackoutsForDay.length > 0 && (
+                      <div className="text-xs p-2 rounded border bg-red-100 border-red-300 text-red-900 flex items-center justify-between">
+                        <div className="flex items-center truncate">
+                          <Ban size={12} className="mr-1 flex-shrink-0" />
+                          <span className="truncate" title={blackoutsForDay.map(b => b.reason).join(' | ')}>
+                            Bloqueo{blackoutsForDay.length > 1 ? 's' : ''}: {blackoutsForDay[0].reason}
+                          </span>
+                        </div>
+                        <button
+                          className="ml-2 text-xs underline hover:no-underline"
+                          onClick={() => openBlackoutList(day)}
+                          title="Ver y gestionar bloqueos de este día"
+                        >
+                          Ver
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="space-y-1 mt-1">
                       {coursesForDay.slice(0, 3).map(course => (
                         <div
                           key={course.id}
@@ -367,7 +478,7 @@ Cliente: ${getClientName(course.clientId)}
 Fechas: ${course.startDate} - ${course.endDate}
 Valor total: ${formatCurrency(course.totalValue)}
 Valor diario: ${formatCurrency(calculateDailyValue(course))}
-Estado: ${getStatusText(course.status)}`}
+Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones: ${course.observations}` : ''}`}
                         >
                           <div className="font-medium truncate mb-1">
                             {course.courseName}
@@ -408,6 +519,79 @@ Estado: ${getStatusText(course.status)}`}
           })}
         </div>
       </div>
+
+      {showBlackoutForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-4 w-full max-w-md">
+            <h4 className="text-lg font-semibold mb-3 flex items-center">
+              <Ban className="mr-2" /> Nueva Fecha de Bloqueo
+            </h4>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="blk-start" className="text-sm text-gray-700">Desde</label>
+                  <input id="blk-start" type="date" className="w-full border rounded px-2 py-1" title="Fecha de inicio del bloqueo" value={newBlackout.startDate} onChange={e => setNewBlackout(v => ({ ...v, startDate: e.target.value }))} />
+                </div>
+                <div>
+                  <label htmlFor="blk-end" className="text-sm text-gray-700">Hasta</label>
+                  <input id="blk-end" type="date" className="w-full border rounded px-2 py-1" title="Fecha de fin del bloqueo" value={newBlackout.endDate} onChange={e => setNewBlackout(v => ({ ...v, endDate: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="blk-reason" className="text-sm text-gray-700">Motivo</label>
+                <input id="blk-reason" type="text" className="w-full border rounded px-2 py-1" placeholder="Vacaciones, viaje, indisponibilidad..." title="Motivo del bloqueo" value={newBlackout.reason} onChange={e => setNewBlackout(v => ({ ...v, reason: e.target.value }))} />
+              </div>
+              <div>
+                <label htmlFor="blk-type" className="text-sm text-gray-700">Tipo</label>
+                <select id="blk-type" className="w-full border rounded px-2 py-1" title="Tipo de bloqueo" value={newBlackout.type} onChange={e => setNewBlackout(v => ({ ...v, type: e.target.value as Blackout['type'] }))}>
+                  <option value="personal">Personal</option>
+                  <option value="holiday">Festivo</option>
+                  <option value="travel">Viaje</option>
+                  <option value="other">Otro</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 mt-4">
+              <button className="px-3 py-1 rounded bg-gray-100" onClick={() => setShowBlackoutForm(false)}>Cancelar</button>
+              <button className="px-3 py-1 rounded bg-red-600 text-white" onClick={saveNewBlackout}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBlackoutList && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-4 w-full max-w-md">
+            <h4 className="text-lg font-semibold mb-3 flex items-center">
+              <Ban className="mr-2" /> Bloqueos del {blackoutListTitle}
+            </h4>
+            {blackoutsForDay.length === 0 ? (
+              <div className="text-sm text-gray-600">No hay bloqueos en este día.</div>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-auto">
+                {blackoutsForDay.map(b => (
+                  <div key={b.id} className="p-2 border rounded flex items-start justify-between">
+                    <div className="text-sm">
+                      <div className="font-medium text-red-700">{b.reason}</div>
+                      <div className="text-gray-600 text-xs">{b.startDate} → {b.endDate} • {b.type}</div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteBlackout(b.id)}
+                      className="ml-3 px-2 py-1 text-xs bg-red-600 text-white rounded"
+                      title="Eliminar bloqueo"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-4">
+              <button className="px-3 py-1 rounded bg-gray-100" onClick={() => setShowBlackoutList(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Leyenda */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
