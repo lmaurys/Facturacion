@@ -40,7 +40,8 @@ const App: React.FC = () => {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  const invoiceRef = useRef<HTMLDivElement>(null);
+  const visibleInvoiceRef = useRef<HTMLDivElement>(null);
+  const hiddenInvoiceRef = useRef<HTMLDivElement>(null);
 
   // Cargar datos automáticamente desde Azure al inicio
   React.useEffect(() => {
@@ -102,46 +103,36 @@ const App: React.FC = () => {
   }, [selectedTransfer]);
 
   const handlePrint = useReactToPrint({
-    content: () => invoiceRef.current,
+    content: () => (window.innerWidth < 768 ? hiddenInvoiceRef.current : visibleInvoiceRef.current),
   });
 
   const handleExportPDF = async () => {
-    if (invoiceRef.current) {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'pt',
-        format: 'a4'
-      });
+    const node = window.innerWidth < 768 ? hiddenInvoiceRef.current : visibleInvoiceRef.current;
+    if (!node) return;
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const margin = 40;
+    // Documento tamaño Carta con márgenes mínimos (0.25")
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 18; // ~0.25 inch en puntos
 
-      // Capturar el contenido HTML como una imagen
-      const canvas = await html2canvas(invoiceRef.current, {
-        scale: 2,
-        logging: false,
-        useCORS: true,
-      });
-      const imgData = canvas.toDataURL('image/png');
+    // Capturar el contenido HTML como una imagen
+    const canvas = await html2canvas(node, { scale: 2, logging: false, useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
 
-      // Calcular las dimensiones para mantener la proporción
-      const imgWidth = pdfWidth - (2 * margin);
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    // Escalado para encajar dentro de los márgenes sin distorsión
+    const maxWidth = pageWidth - 2 * margin;
+    const maxHeight = pageHeight - 2 * margin;
+    const widthRatio = maxWidth / canvas.width;
+    const heightRatio = maxHeight / canvas.height;
+    const ratio = Math.min(widthRatio, heightRatio);
+    const renderWidth = canvas.width * ratio;
+    const renderHeight = canvas.height * ratio;
 
-      // Añadir la imagen al PDF
-      pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'PNG', margin, margin, renderWidth, renderHeight);
 
-      // Ajustar el tamaño del PDF si el contenido es más largo que una página
-      if (imgHeight > (pdfHeight - (2 * margin))) {
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', margin, -(pdfHeight - (2 * margin)), imgWidth, imgHeight);
-      }
-
-      // Generar el nombre del archivo
-      const filename = `Factura${invoiceNumber}.pdf`;
-      pdf.save(filename);
-    }
+    const filename = `Factura${invoiceNumber}.pdf`;
+    pdf.save(filename);
   };
 
   const updateInvoice = (updatedInvoice: Partial<Invoice>) => {
@@ -337,8 +328,8 @@ const App: React.FC = () => {
               />
             </div>
 
-            <div className="bg-white shadow-md rounded-lg p-6">
-              <div ref={invoiceRef}>
+            <div className="bg-white shadow-md rounded-lg p-6 hidden lg:block">
+              <div ref={visibleInvoiceRef}>
                 <InvoicePreview
                   invoice={invoice}
                   invoiceNumber={invoiceNumber}
@@ -362,6 +353,39 @@ const App: React.FC = () => {
                   <Download className="mr-2" size={20} />
                   {language === 'es' ? 'PDF' : 'PDF'}
                 </button>
+              </div>
+            </div>
+            {/* Contenedor offscreen para PDF/impresión en pantallas pequeñas */}
+            <div className="block lg:hidden">
+              <div ref={hiddenInvoiceRef} className="fixed -left-[10000px] -top-[10000px] w-[794px] bg-white p-4">
+                <InvoicePreview
+                  invoice={invoice}
+                  invoiceNumber={invoiceNumber}
+                  selectedIssuer={selectedIssuer}
+                  language={language}
+                  paymentTerms={paymentTerms}
+                />
+              </div>
+              <div className="bg-white shadow-md rounded-lg p-6">
+                <p className="text-sm text-gray-700">
+                  La previsualización se oculta en pantallas pequeñas para preservar el formato del PDF. Usa los botones de Imprimir o PDF para generar el documento con el diseño correcto.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-end gap-3">
+                  <button
+                    onClick={handlePrint}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded flex items-center"
+                  >
+                    <Printer className="mr-2" size={20} />
+                    {language === 'es' ? 'Imprimir' : 'Print'}
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded flex items-center"
+                  >
+                    <Download className="mr-2" size={20} />
+                    {language === 'es' ? 'PDF' : 'PDF'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

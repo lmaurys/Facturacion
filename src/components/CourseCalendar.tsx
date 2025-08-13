@@ -319,9 +319,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
   return (
     <div className="bg-white shadow-md rounded-lg p-6">
-      {/* Header del calendario */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center space-x-4">
+      {/* Header del calendario (sticky debajo del nav) */}
+      <div className="sticky top-16 z-30 bg-white flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6 py-2 -mx-2 px-2 sm:mx-0 sm:px-0 border-b border-gray-100">
+        <div className="flex items-center space-x-3 sm:space-x-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 flex items-center">
               <Calendar className="mr-3" size={24} />
@@ -341,29 +341,29 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
           </button>
         </div>
         
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => navigateMonth('prev')}
-            className="p-2 hover:bg-gray-100 rounded-md"
-            title="Mes anterior"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          
-          <h3 className="text-xl font-semibold text-gray-800 min-w-[200px] text-center">
-            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-          </h3>
-          
-          <button
-            onClick={() => navigateMonth('next')}
-            className="p-2 hover:bg-gray-100 rounded-md"
-            title="Mes siguiente"
-          >
-            <ChevronRight size={20} />
-          </button>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex items-center">
+            <button
+              onClick={() => navigateMonth('prev')}
+              className="p-2 hover:bg-gray-100 rounded-md"
+              title="Mes anterior"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <h3 className="text-base sm:text-xl font-semibold text-gray-800 min-w-[140px] sm:min-w-[200px] text-center">
+              {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+            </h3>
+            <button
+              onClick={() => navigateMonth('next')}
+              className="p-2 hover:bg-gray-100 rounded-md"
+              title="Mes siguiente"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
           <button
             onClick={() => setShowBlackoutForm(true)}
-            className="ml-2 p-2 bg-red-50 text-red-700 rounded-md hover:bg-red-100 flex items-center"
+            className="px-3 py-2 bg-red-50 text-red-700 rounded-md hover:bg-red-100 inline-flex items-center w-full sm:w-auto justify-center"
             title="Agregar fecha de bloqueo"
           >
             <Plus size={16} className="mr-1" /> Bloqueo
