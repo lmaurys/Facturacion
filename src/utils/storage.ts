@@ -1,11 +1,12 @@
-import { Course, Client, InvoiceFromCourse, Blackout } from '../types';
-import { loadDataFromAzure, saveDataToAzure, syncWithAzure as azureSync } from './azureBlobSync';
+import { Course, Client, InvoiceFromCourse, Blackout, Instructor } from '../types';
+import { loadDataFromAzure, saveDataToAzure } from './azureBlobSync';
 
 // Azure como única fuente de verdad
 let localDataCache: {
   courses: Course[];
   clients: Client[];
   invoices: InvoiceFromCourse[];
+  instructors: Instructor[];
   blackouts: Blackout[];
   lastUpdate: string;
   isInitialized: boolean;
@@ -13,6 +14,7 @@ let localDataCache: {
   courses: [],
   clients: [],
   invoices: [],
+  instructors: [],
   blackouts: [],
   lastUpdate: new Date().toISOString(),
   isInitialized: false
@@ -32,6 +34,7 @@ export const forceSaveToAzure = async (): Promise<boolean> => {
       courses: localDataCache.courses,
       clients: localDataCache.clients,
       invoices: localDataCache.invoices,
+      instructors: localDataCache.instructors,
       blackouts: localDataCache.blackouts,
       exportDate: new Date().toISOString(),
       version: 2
@@ -92,6 +95,7 @@ const autoSyncAfterChange = async () => {
         courses: localDataCache.courses,
         clients: localDataCache.clients,
         invoices: localDataCache.invoices,
+        instructors: localDataCache.instructors,
         blackouts: localDataCache.blackouts,
         exportDate: new Date().toISOString(),
         version: 2
@@ -250,7 +254,7 @@ export const initializeFromAzure = async (): Promise<boolean> => {
     
     const azureData = await loadDataFromAzure();
     
-    if (azureData) {
+  if (azureData) {
       console.log('📍 PASO 2: Datos recibidos desde Azure');
       console.log('📊 DATOS BRUTOS RECIBIDOS DE AZURE:', {
         courses: azureData.courses?.length || 0,
@@ -261,9 +265,9 @@ export const initializeFromAzure = async (): Promise<boolean> => {
       });
       
       // Mostrar algunos datos para debug
-      if (azureData.courses && azureData.courses.length > 0) {
+    if (azureData.courses && (azureData.courses as unknown[]).length > 0) {
         console.log('🎓 MUESTRA DE CURSOS EN AZURE:', 
-          azureData.courses.slice(0, 3).map(c => ({
+      (azureData.courses as Partial<Course>[]).slice(0, 3).map((c) => ({
             id: c.id,
             name: c.courseName,
             startDate: c.startDate,
@@ -275,9 +279,9 @@ export const initializeFromAzure = async (): Promise<boolean> => {
         console.log('⚠️ No hay cursos en los datos de Azure');
       }
       
-      if (azureData.clients && azureData.clients.length > 0) {
+    if (azureData.clients && (azureData.clients as unknown[]).length > 0) {
         console.log('👥 MUESTRA DE CLIENTES EN AZURE:', 
-          azureData.clients.slice(0, 3).map(c => ({
+      (azureData.clients as Partial<Client>[]).slice(0, 3).map((c) => ({
             id: c.id,
             name: c.name,
             nit: c.nit
@@ -291,27 +295,45 @@ export const initializeFromAzure = async (): Promise<boolean> => {
       console.log('📍 PASO 3: Iniciando limpieza de duplicados');
       console.log('🧹 Limpiando duplicados antes de cargar...');
       
-      const uniqueClients = removeDuplicateClients(azureData.clients || []);
+  const remoteClients = (azureData.clients || []) as unknown as Client[];
+      const uniqueClients = removeDuplicateClients(remoteClients || []);
       console.log('📍 PASO 3A: Clientes después de limpieza:', uniqueClients.length);
       
-      const uniqueCourses = removeDuplicateCourses(azureData.courses || []);
-      console.log('📍 PASO 3B: Cursos después de limpieza:', uniqueCourses.length);
+  const remoteCourses = (azureData.courses || []) as unknown as Course[];
+  const uniqueCoursesRaw = removeDuplicateCourses(remoteCourses || []);
+  console.log('📍 PASO 3B: Cursos después de limpieza:', uniqueCoursesRaw.length);
       
-      const uniqueInvoices = removeDuplicateInvoices(azureData.invoices || []);
+      const remoteInvoices = (azureData.invoices || []) as unknown as InvoiceFromCourse[];
+      const uniqueInvoices = removeDuplicateInvoices(remoteInvoices || []);
       console.log('📍 PASO 3C: Facturas después de limpieza:', uniqueInvoices.length);
       
       console.log('📊 DATOS DESPUÉS DE LIMPIAR DUPLICADOS:', {
-        courses: uniqueCourses.length,
+        courses: uniqueCoursesRaw.length,
         clients: uniqueClients.length,
         invoices: uniqueInvoices.length
       });
       
       console.log('📍 PASO 4: Actualizando cache local');
+      // Instructores y backfill
+      let instructors: Instructor[] = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
+      const defaultInstructorName = 'Luis Maury';
+      let defaultInstructor = instructors.find(i => i.name === defaultInstructorName);
+      if (!defaultInstructor) {
+        defaultInstructor = { id: generateInstructorId(), name: defaultInstructorName, active: true };
+        instructors = [defaultInstructor, ...instructors];
+      }
+
+      const coursesWithInstructor: Course[] = (uniqueCoursesRaw as Course[]).map((c: Course) => ({
+        ...c,
+        instructorId: c.instructorId || defaultInstructor!.id
+      }));
+
       localDataCache = {
-        courses: uniqueCourses,
+        courses: coursesWithInstructor,
         clients: uniqueClients,
         invoices: uniqueInvoices,
-        blackouts: (azureData as any).blackouts || [],
+        instructors,
+        blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
@@ -340,6 +362,7 @@ export const initializeFromAzure = async (): Promise<boolean> => {
         courses: [],
         clients: [],
         invoices: [],
+        instructors: [],
         blackouts: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: true
@@ -359,6 +382,8 @@ export const initializeFromAzure = async (): Promise<boolean> => {
       courses: [],
       clients: [],
       invoices: [],
+      instructors: [],
+      blackouts: [],
       lastUpdate: new Date().toISOString(),
       isInitialized: true
     };
@@ -377,11 +402,23 @@ export const emergencyLoadFromAzure = async (): Promise<boolean> => {
     
     if (azureData) {
       // NO limpiar duplicados - cargar TODO
+      // Cargar TODO tal cual pero garantizando tipos y backfill de instructor
+      const courses = ((azureData.courses || []) as unknown as Course[]).map((c) => ({
+        ...c,
+        instructorId: c.instructorId || 'default_instructor'
+      }));
+      const clients = (azureData.clients || []) as unknown as Client[];
+      const invoices = (azureData.invoices || []) as unknown as InvoiceFromCourse[];
+      let instructors = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
+      if (!instructors.find(i => i.id === 'default_instructor')) {
+        instructors = [{ id: 'default_instructor', name: 'Luis Maury', active: true }, ...instructors];
+      }
       localDataCache = {
-        courses: azureData.courses || [],
-        clients: azureData.clients || [],
-        invoices: azureData.invoices || [],
-        blackouts: (azureData as any).blackouts || [],
+        courses,
+        clients,
+        invoices,
+        instructors,
+        blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
@@ -436,11 +473,21 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
       }
       
       console.log('📍 PASO 3: Cargando datos exactos (sin filtros)');
-      // CARGAR EXACTAMENTE LO QUE ESTÁ EN AZURE - SIN FILTROS
+      // CARGAR EXACTAMENTE LO QUE ESTÁ EN AZURE - SIN FILTROS (con tipado y backfill mínimo de instructor)
+      const rawCourses = (azureData.courses || []) as unknown as Course[];
+      let instructors = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
+      // Asegurar instructor por defecto
+      if (!instructors.find(i => i.name === 'Luis Maury')) {
+        instructors = [{ id: 'default_instructor', name: 'Luis Maury', active: true }, ...instructors];
+      }
+      const defaultInstructorId = (instructors.find(i => i.name === 'Luis Maury')?.id) || 'default_instructor';
+      const coursesBackfilled = rawCourses.map(c => ({ ...c, instructorId: c.instructorId || defaultInstructorId }));
       localDataCache = {
-        courses: azureData.courses || [],
-        clients: azureData.clients || [],
-        invoices: azureData.invoices || [],
+        courses: coursesBackfilled,
+        clients: (azureData.clients || []) as unknown as Client[],
+        invoices: (azureData.invoices || []) as unknown as InvoiceFromCourse[],
+        instructors,
+        blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
@@ -497,6 +544,7 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
         courses: [],
         clients: [],
         invoices: [],
+        instructors: [],
         blackouts: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: true
@@ -515,6 +563,8 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
       courses: [],
       clients: [],
       invoices: [],
+      instructors: [],
+      blackouts: [],
       lastUpdate: new Date().toISOString(),
       isInitialized: true
     };
@@ -931,6 +981,8 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
           courses: localDataCache.courses,
           clients: localDataCache.clients,
           invoices: localDataCache.invoices,
+          instructors: localDataCache.instructors,
+          blackouts: localDataCache.blackouts,
           exportDate: new Date().toISOString(),
           version: 2
         });
@@ -1012,6 +1064,80 @@ export const generateClientId = (): string => {
 
 export const generateInvoiceId = (): string => {
   return `invoice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+// ========================= INSTRUCTORS =========================
+
+export const generateInstructorId = (): string => {
+  return `instructor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+export const loadInstructors = async (): Promise<Instructor[]> => {
+  return localDataCache.instructors;
+};
+
+export const addInstructor = async (data: Omit<Instructor, 'id'>): Promise<Instructor | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+    if (localDataCache.instructors.some(i => i.name.trim().toLowerCase() === data.name.trim().toLowerCase())) {
+      console.warn('⚠️ Instructor duplicado por nombre:', data.name);
+      return null;
+    }
+    const instructor: Instructor = { id: generateInstructorId(), ...data };
+    localDataCache.instructors.push(instructor);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar instructor, queda en cache local');
+    window.dispatchEvent(new CustomEvent('instructorUpdated'));
+    return instructor;
+  } catch (e) {
+    console.error('❌ Error agregando instructor:', e);
+    return null;
+  }
+};
+
+export const updateInstructor = async (instructorId: string, data: Omit<Instructor, 'id'>): Promise<Instructor | null> => {
+  try {
+    const idx = localDataCache.instructors.findIndex(i => i.id === instructorId);
+    if (idx === -1) return null;
+    if (localDataCache.instructors.some(i => i.id !== instructorId && i.name.trim().toLowerCase() === data.name.trim().toLowerCase())) {
+      console.warn('⚠️ Nombre de instructor ya existe:', data.name);
+      return null;
+    }
+    const updated: Instructor = { ...localDataCache.instructors[idx], ...data, id: instructorId };
+    localDataCache.instructors[idx] = updated;
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar actualización de instructor');
+    window.dispatchEvent(new CustomEvent('instructorUpdated'));
+    return updated;
+  } catch (e) {
+    console.error('❌ Error actualizando instructor:', e);
+    return null;
+  }
+};
+
+export const deleteInstructor = async (instructorId: string): Promise<{ removed: boolean; reason?: string }> => {
+  try {
+    if (localDataCache.courses.some(c => c.instructorId === instructorId)) {
+      const idx = localDataCache.instructors.findIndex(i => i.id === instructorId);
+      if (idx !== -1) {
+        localDataCache.instructors[idx] = { ...localDataCache.instructors[idx], active: false };
+        await forceSaveToAzure();
+        window.dispatchEvent(new CustomEvent('instructorUpdated'));
+      }
+      return { removed: false, reason: 'in-use-marked-inactive' };
+    }
+    const before = localDataCache.instructors.length;
+    localDataCache.instructors = localDataCache.instructors.filter(i => i.id !== instructorId);
+    if (localDataCache.instructors.length === before) return { removed: false, reason: 'not-found' };
+    await forceSaveToAzure();
+    window.dispatchEvent(new CustomEvent('instructorUpdated'));
+    return { removed: true };
+  } catch (e) {
+    console.error('❌ Error eliminando instructor:', e);
+    return { removed: false, reason: 'error' };
+  }
 };
 
 export const getNextInvoiceNumber = async (): Promise<string> => {
@@ -1125,6 +1251,8 @@ export const exportAllData = async (): Promise<string> => {
     courses: localDataCache.courses,
     clients: localDataCache.clients,
     invoices: localDataCache.invoices,
+  instructors: localDataCache.instructors,
+  blackouts: localDataCache.blackouts,
     exportDate: new Date().toISOString(),
     version: 2
   };
@@ -1202,7 +1330,7 @@ export const validateInvoiceUpdate = async (invoiceId: string, expectedData: Par
     let allFieldsValid = true;
     
     for (const [key, expectedValue] of Object.entries(expectedData)) {
-      const actualValue = (cachedInvoice as any)[key];
+      const actualValue = ((cachedInvoice as unknown) as Record<string, unknown>)[key];
       
       if (actualValue !== expectedValue) {
         console.error(`❌ Campo ${key} no coincide:`, {
@@ -1243,12 +1371,12 @@ export const diagnoseInvoiceIssues = async (invoiceId: string): Promise<void> =>
     const azureData = await loadDataFromAzure();
     
     if (azureData && azureData.invoices) {
-      const azureInvoice = azureData.invoices.find((inv: any) => inv.id === invoiceId);
+      const azureInvoice = (azureData.invoices as unknown as InvoiceFromCourse[]).find((inv) => inv.id === invoiceId);
       
       if (azureInvoice) {
         console.log('✅ Factura encontrada en Azure:');
         console.log('📋 Datos en Azure:', azureInvoice);
-        console.log('🔍 Emisor en Azure:', azureInvoice.issuer);
+  console.log('🔍 Emisor en Azure:', azureInvoice.issuer);
         
         // Comparar datos
         if (cachedInvoice) {
@@ -1276,13 +1404,14 @@ export const forceReloadFromAzure = async (): Promise<boolean> => {
     
     // Limpiar cache local
       localDataCache = {
-      courses: [],
-      clients: [],
-      invoices: [],
+        courses: [],
+        clients: [],
+        invoices: [],
+        instructors: [],
         blackouts: [],
-      lastUpdate: new Date().toISOString(),
-      isInitialized: false
-    };
+        lastUpdate: new Date().toISOString(),
+        isInitialized: false
+      };
     
     console.log('🧹 Cache local limpiado');
     

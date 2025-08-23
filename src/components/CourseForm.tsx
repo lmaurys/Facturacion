@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Course, Client } from '../types';
-import { X, Save, Plus, ArrowUp } from 'lucide-react';
-import { loadClients } from '../utils/storage';
+import { Course, Client, Instructor } from '../types';
+import { X, Save, ArrowUp } from 'lucide-react';
+import { loadClients, loadInstructors } from '../utils/storage';
 
 interface CourseFormProps {
   course?: Course | null;
@@ -19,6 +19,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     hourlyRate: 0,
     totalValue: 0,
     clientId: '',
+    instructorId: '',
     invoiceNumber: '',
     invoiceDate: '',
     status: 'creado',
@@ -28,6 +29,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
   });
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -37,8 +39,12 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
       const loadedClients = await loadClients();
       setClients(loadedClients);
     };
-    
+    const loadInstructorsAsync = async () => {
+      const loadedInstructors = await loadInstructors();
+      setInstructors(loadedInstructors);
+    };
     loadClientsAsync();
+    loadInstructorsAsync();
   }, []);
 
   useEffect(() => {
@@ -46,8 +52,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     if (!el) return;
     const onScroll = () => setShowScrollTop(el.scrollTop > 300);
     onScroll();
-    el.addEventListener('scroll', onScroll, { passive: true } as any);
-    return () => el.removeEventListener('scroll', onScroll as any);
+  el.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions);
+  return () => el.removeEventListener('scroll', onScroll as EventListener);
   }, []);
 
   useEffect(() => {
@@ -70,13 +76,16 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     }));
   };
 
-  const getClientName = (clientId: string): string => {
-    const client = clients.find(c => c.id === clientId);
-    return client ? client.name : '';
-  };
+  // helper omitido
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // si no hay instructor seleccionado pero existe uno activo por defecto, asignarlo
+    if (!formData.instructorId && instructors.length > 0) {
+      const preferred = instructors.find(i => i.name.toLowerCase().includes('luis maury') && i.active) || instructors.find(i => i.active) || instructors[0];
+      onSave({ ...formData, instructorId: preferred.id });
+      return;
+    }
     onSave(formData);
   };
 
@@ -221,6 +230,30 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                 {clients.length === 0 && (
                   <p className="mt-1 text-sm text-gray-500">
                     No hay clientes registrados. Primero agrega clientes en la sección de Gestión de Clientes.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Instructor *
+                </label>
+                <select
+                  name="instructorId"
+                  value={formData.instructorId}
+                  onChange={handleInputChange}
+                  required
+                  title="Seleccionar instructor para el curso"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Seleccionar instructor</option>
+                  {instructors.filter(i => i.active).map(inst => (
+                    <option key={inst.id} value={inst.id}>{inst.name}</option>
+                  ))}
+                </select>
+                {instructors.length === 0 && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    No hay instructores registrados. Agrega instructores en la sección de Gestión de Datos.
                   </p>
                 )}
               </div>

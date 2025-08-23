@@ -10,10 +10,11 @@ const AZURE_CONFIG = {
 };
 
 export interface SyncData {
-  courses: any[];
-  clients: any[];
-  invoices: any[];
-  blackouts?: any[];
+  courses: unknown[];
+  clients: unknown[];
+  invoices: unknown[];
+  instructors?: unknown[];
+  blackouts?: unknown[];
   exportDate: string;
   version: number;
 }

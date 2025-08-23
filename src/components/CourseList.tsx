@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Course, Client } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Course, Client, Instructor } from '../types';
 import { Edit2, Trash2, Plus, Calendar, DollarSign, Clock, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { loadClients } from '../utils/storage';
+import { loadClients, loadInstructors } from '../utils/storage';
 import { formatDate } from '../utils/dateUtils';
 import { formatHours, formatHourlyRate, formatCurrency } from '../utils/numberUtils';
 
@@ -17,9 +17,11 @@ type SortDirection = 'asc' | 'desc' | null;
 
 const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAdd }) => {
   const [clients, setClients] = useState<Client[]>([]);
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
+  const [instructorFilter, setInstructorFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [filtersOpen, setFiltersOpen] = useState<boolean>(false);
@@ -30,13 +32,22 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
       const loadedClients = await loadClients();
       setClients(loadedClients);
     };
-    
+    const loadInstructorsAsync = async () => {
+      const loadedInstructors = await loadInstructors();
+      setInstructors(loadedInstructors);
+    };
     loadClientsAsync();
+    loadInstructorsAsync();
   }, []);
 
-  const getClientName = (clientId: string): string => {
+  const getClientName = useCallback((clientId: string): string => {
     const client = clients.find(c => c.id === clientId);
     return client ? client.name : 'Cliente no encontrado';
+  }, [clients]);
+
+  const getInstructorName = (instructorId: string): string => {
+    const inst = instructors.find(i => i.id === instructorId);
+    return inst ? inst.name : 'Instructor';
   };
 
   const getStatusBadge = (status: 'creado' | 'dictado' | 'facturado' | 'pagado') => {
@@ -89,7 +100,7 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
   };
 
   const filteredAndSortedCourses = React.useMemo(() => {
-    let filtered = courses.filter(course => {
+    const filtered = courses.filter(course => {
       const matchesSearch = 
         course.courseName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         getClientName(course.clientId).toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -97,28 +108,46 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
         course.observations.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesStatus = statusFilter === 'all' || course.status === statusFilter;
-      const matchesClient = clientFilter === 'all' || course.clientId === clientFilter;
+  const matchesClient = clientFilter === 'all' || course.clientId === clientFilter;
+  const matchesInstructor = instructorFilter === 'all' || course.instructorId === instructorFilter;
       
-      return matchesSearch && matchesStatus && matchesClient;
+  return matchesSearch && matchesStatus && matchesClient && matchesInstructor;
     });
 
     if (sortKey && sortDirection) {
       filtered.sort((a, b) => {
-        let aValue: any = a[sortKey];
-        let bValue: any = b[sortKey];
+        let aValue: string | number;
+        let bValue: string | number;
 
-        // Casos especiales para ordenamiento
-        if (sortKey === 'clientId') {
-          aValue = getClientName(a.clientId);
-          bValue = getClientName(b.clientId);
-        } else if (sortKey === 'startDate') {
-          aValue = new Date(a.startDate).getTime();
-          bValue = new Date(b.startDate).getTime();
-        }
-
-        if (typeof aValue === 'string') {
-          aValue = aValue.toLowerCase();
-          bValue = bValue.toLowerCase();
+        switch (sortKey) {
+          case 'clientId':
+            aValue = getClientName(a.clientId).toLowerCase();
+            bValue = getClientName(b.clientId).toLowerCase();
+            break;
+          case 'startDate':
+            aValue = new Date(a.startDate).getTime();
+            bValue = new Date(b.startDate).getTime();
+            break;
+          case 'hours':
+            aValue = a.hours;
+            bValue = b.hours;
+            break;
+          case 'totalValue':
+            aValue = a.totalValue;
+            bValue = b.totalValue;
+            break;
+          case 'status':
+            aValue = a.status.toLowerCase();
+            bValue = b.status.toLowerCase();
+            break;
+          case 'invoiceNumber':
+            aValue = (a.invoiceNumber || '').toLowerCase();
+            bValue = (b.invoiceNumber || '').toLowerCase();
+            break;
+          case 'courseName':
+          default:
+            aValue = a.courseName.toLowerCase();
+            bValue = b.courseName.toLowerCase();
         }
 
         if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
@@ -128,12 +157,13 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
     }
 
     return filtered;
-  }, [courses, searchTerm, statusFilter, clientFilter, sortKey, sortDirection, clients]);
+  }, [courses, searchTerm, statusFilter, clientFilter, instructorFilter, sortKey, sortDirection, clients, getClientName]);
 
   const clearFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
     setClientFilter('all');
+    setInstructorFilter('all');
     setSortKey(null);
     setSortDirection(null);
   };
@@ -197,7 +227,7 @@ Escribe "CONFIRMAR" para proceder:`;
 
       {/* Filtros */}
       <div className={`mb-4 md:mb-6 p-4 bg-gray-50 rounded-lg ${filtersOpen ? 'block' : 'hidden'} md:block`}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+  <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Búsqueda */}
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -237,6 +267,21 @@ Escribe "CONFIRMAR" para proceder:`;
               <option value="all">Todos los clientes</option>
               {clients.map(client => (
                 <option key={client.id} value={client.id}>{client.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filtro por Instructor */}
+          <div>
+            <select
+              value={instructorFilter}
+              onChange={(e) => setInstructorFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Filtrar por instructor"
+            >
+              <option value="all">Todos los instructores</option>
+              {instructors.filter(i => i.active).map(inst => (
+                <option key={inst.id} value={inst.id}>{inst.name}</option>
               ))}
             </select>
           </div>
@@ -352,6 +397,9 @@ Escribe "CONFIRMAR" para proceder:`;
                     {getSortIcon('clientId')}
                   </div>
                 </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                  Instructor
+                </th>
                 <th 
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-1/8"
                   onClick={() => handleSort('startDate')}
@@ -418,6 +466,11 @@ Escribe "CONFIRMAR" para proceder:`;
                   <td className="px-3 py-4">
                     <div className="text-sm text-gray-900 leading-5 break-words">
                       {getClientName(course.clientId)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="text-sm text-gray-900 leading-5 break-words">
+                      {getInstructorName(course.instructorId)}
                     </div>
                   </td>
                   <td className="px-3 py-4">

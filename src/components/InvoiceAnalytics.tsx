@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { InvoiceFromCourse, Client, Course } from '../types';
-import { loadInvoices, loadClients, loadCourses } from '../utils/storage';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { InvoiceFromCourse, Client, Course, Instructor } from '../types';
+import { loadInvoices, loadClients, loadCourses, loadInstructors } from '../utils/storage';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, DollarSign, FileText, Users, Calendar, BarChart3 } from 'lucide-react';
-import { formatDate } from '../utils/dateUtils';
 
 interface AnalyticsData {
   monthlyRevenue: Array<{ month: string; paid: number; sent: number; draft: number; invoices: number }>;
@@ -18,7 +17,8 @@ interface AnalyticsData {
     paid: number;
     expectedBilling: number;
   }>;
-  coursesStatusDistribution: Array<{ name: string; value: number; count: number; color: string }>;
+  coursesStatusDistribution: Array<{ name: string; value: number; count: number; colorClass: string }>;
+  byInstructor: Array<{ instructor: string; courses: number; totalValue: number; paidCourses: number; billedCourses: number; plannedCourses: number }>;
 }
 
 const InvoiceAnalytics: React.FC = () => {
@@ -27,37 +27,31 @@ const InvoiceAnalytics: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>('all');
 
   useEffect(() => {
     loadData();
   }, []);
 
-  useEffect(() => {
-    if (invoices.length > 0 && clients.length > 0 && courses.length > 0) {
-      processAnalytics();
-    }
-  }, [invoices, clients, courses, selectedYear]);
+  const processAnalytics = React.useCallback(() => {
+    // Cursos del año y filtrado por instructor (si aplica)
+    const yearCoursesAll = courses.filter(course => 
+      new Date(course.startDate).getFullYear() === selectedYear
+    );
+    const yearCourses = selectedInstructorId === 'all' 
+      ? yearCoursesAll 
+      : yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
 
-  const loadData = async () => {
-    try {
-      const [loadedInvoices, loadedClients, loadedCourses] = await Promise.all([
-        loadInvoices(),
-        loadClients(),
-        loadCourses()
-      ]);
-      setInvoices(loadedInvoices);
-      setClients(loadedClients);
-      setCourses(loadedCourses);
-    } catch (error) {
-      console.error('Error loading analytics data:', error);
-    }
-  };
+    const yearCourseIds = new Set(yearCourses.map(c => c.id));
 
-  const processAnalytics = () => {
-    // Filtrar facturas del año seleccionado
-    const yearInvoices = invoices.filter(invoice => 
+    // Facturas del año y filtradas por cursos del instructor (si aplica)
+    const yearInvoicesAll = invoices.filter(invoice => 
       new Date(invoice.invoiceDate).getFullYear() === selectedYear
     );
+    const yearInvoices = selectedInstructorId === 'all'
+      ? yearInvoicesAll
+      : yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id)));
 
     // 1. Ingresos mensuales (pagadas, enviadas y borradores)
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
@@ -77,11 +71,6 @@ const InvoiceAnalytics: React.FC = () => {
         invoices: monthInvoices.length
       };
     });
-
-    // 2. Cursos creados por mes
-    const yearCourses = courses.filter(course => 
-      new Date(course.startDate).getFullYear() === selectedYear
-    );
 
     const monthlyCoursesData = Array.from({ length: 12 }, (_, i) => {
       const monthCourses = yearCourses.filter(course => 
@@ -174,23 +163,65 @@ const InvoiceAnalytics: React.FC = () => {
       pagado: yearCourses.filter(c => c.status === 'pagado')
     };
 
-    const coursesStatusDistribution = Object.entries(coursesByStatus).map(([status, courseList]) => ({
-      name: status.charAt(0).toUpperCase() + status.slice(1),
-      value: courseList.reduce((sum, course) => sum + course.totalValue, 0),
-      count: courseList.length,
-      color: status === 'pagado' ? '#10B981' : 
-             status === 'facturado' ? '#3B82F6' : 
-             status === 'dictado' ? '#F59E0B' : '#9CA3AF'
-    })).filter(item => item.count > 0); // Solo mostrar estados con cursos
+  const coursesStatusDistribution = Object.entries(coursesByStatus).map(([status, courseList]) => {
+      const colorClass = status === 'pagado' ? 'bg-green-500' : 
+                         status === 'facturado' ? 'bg-blue-500' : 
+                         status === 'dictado' ? 'bg-amber-500' : 'bg-gray-400';
+      return {
+        name: status.charAt(0).toUpperCase() + status.slice(1),
+        value: courseList.reduce((sum, course) => sum + course.totalValue, 0),
+        count: courseList.length,
+        colorClass
+      };
+    }).filter(item => item.count > 0); // Solo mostrar estados con cursos
+
+    // 6. Distribución por instructor
+    const byInstructorMap = new Map<string, { instructor: string; courses: number; totalValue: number; paidCourses: number; billedCourses: number; plannedCourses: number }>();
+    yearCourses.forEach(course => {
+      const instName = (instructors.find(i => i.id === course.instructorId)?.name) || 'Instructor';
+      const current = byInstructorMap.get(instName) || { instructor: instName, courses: 0, totalValue: 0, paidCourses: 0, billedCourses: 0, plannedCourses: 0 };
+      current.courses += 1;
+      current.totalValue += course.totalValue;
+      if (course.status === 'pagado') current.paidCourses += 1;
+      else if (course.status === 'facturado') current.billedCourses += 1;
+      else current.plannedCourses += 1;
+      byInstructorMap.set(instName, current);
+    });
+    const byInstructor = Array.from(byInstructorMap.values()).sort((a, b) => b.totalValue - a.totalValue);
 
     setAnalytics({
       monthlyRevenue: monthlyData,
       monthlyCoursesCreated: monthlyCoursesData,
       statusDistribution,
       topClients,
-      coursesStatusDistribution
+      coursesStatusDistribution,
+      byInstructor
     });
+  }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId]);
+
+  useEffect(() => {
+    if (invoices.length > 0 && clients.length > 0 && courses.length > 0) {
+      processAnalytics();
+    }
+  }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, processAnalytics]);
+
+  const loadData = async () => {
+    try {
+      const [loadedInvoices, loadedClients, loadedCourses, loadedInstructors] = await Promise.all([
+        loadInvoices(),
+        loadClients(),
+        loadCourses(),
+        loadInstructors()
+      ]);
+      setInvoices(loadedInvoices);
+      setClients(loadedClients);
+      setCourses(loadedCourses);
+      setInstructors(loadedInstructors);
+    } catch (error) {
+      console.error('Error loading analytics data:', error);
+    }
   };
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', {
@@ -199,40 +230,42 @@ const InvoiceAnalytics: React.FC = () => {
     }).format(amount);
   };
 
-  const getTotalRevenue = () => {
-    if (!analytics) return 0;
-    return analytics.monthlyRevenue.reduce((sum, month) => sum + month.paid + month.sent + month.draft, 0);
-  };
-
   const getPaidRevenue = () => {
     if (!analytics) return 0;
     return analytics.monthlyRevenue.reduce((sum, month) => sum + month.paid, 0);
   };
 
   const getTotalInvoices = () => {
-    return invoices.filter(inv => 
-      new Date(inv.invoiceDate).getFullYear() === selectedYear
-    ).length;
+    const yearInvoicesAll = invoices.filter(inv => new Date(inv.invoiceDate).getFullYear() === selectedYear);
+    if (selectedInstructorId === 'all') return yearInvoicesAll.length;
+    const yearCoursesAll = courses.filter(course => new Date(course.startDate).getFullYear() === selectedYear);
+    const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
+    const yearCourseIds = new Set(yearCourses.map(c => c.id));
+    return yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id))).length;
   };
 
   const getUniqueClients = () => {
-    const yearInvoices = invoices.filter(inv => 
-      new Date(inv.invoiceDate).getFullYear() === selectedYear
-    );
-    return new Set(yearInvoices.map(inv => inv.clientId)).size;
+    const yearInvoicesAll = invoices.filter(inv => new Date(inv.invoiceDate).getFullYear() === selectedYear);
+    if (selectedInstructorId === 'all') return new Set(yearInvoicesAll.map(inv => inv.clientId)).size;
+    const yearCoursesAll = courses.filter(course => new Date(course.startDate).getFullYear() === selectedYear);
+    const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
+    const yearCourseIds = new Set(yearCourses.map(c => c.id));
+    const filteredInv = yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id)));
+    return new Set(filteredInv.map(inv => inv.clientId)).size;
   };
 
   const getTotalCourses = () => {
-    return courses.filter(course => 
-      new Date(course.startDate).getFullYear() === selectedYear
-    ).length;
+    const yearCoursesAll = courses.filter(course => new Date(course.startDate).getFullYear() === selectedYear);
+    if (selectedInstructorId === 'all') return yearCoursesAll.length;
+    return yearCoursesAll.filter(c => c.instructorId === selectedInstructorId).length;
   };
 
   const getExpectedBillingTotal = () => {
-    return courses
+    const filtered = courses
       .filter(course => new Date(course.startDate).getFullYear() === selectedYear)
-      .filter(course => course.status === 'creado' || course.status === 'dictado')
-      .reduce((sum, course) => sum + course.totalValue, 0);
+      .filter(course => (selectedInstructorId === 'all') || course.instructorId === selectedInstructorId)
+      .filter(course => course.status === 'creado' || course.status === 'dictado');
+    return filtered.reduce((sum, course) => sum + course.totalValue, 0);
   };
 
   const getAvailableYears = () => {
@@ -243,14 +276,7 @@ const InvoiceAnalytics: React.FC = () => {
     return [...new Set(allYears)].sort((a, b) => b - a);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid': return '#10B981';
-      case 'sent': return '#3B82F6';
-      case 'draft': return '#9CA3AF';
-      default: return '#6B7280';
-    }
-  };
+  // colores por estado definidos en el render
 
   const getStatusPercentage = (amount: number, total: number) => {
     return total > 0 ? (amount / total) * 100 : 0;
@@ -290,6 +316,18 @@ const InvoiceAnalytics: React.FC = () => {
               >
                 {getAvailableYears().map(year => (
                   <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+              <label className="text-sm font-medium text-gray-700">Instructor:</label>
+              <select
+                value={selectedInstructorId}
+                onChange={(e) => setSelectedInstructorId(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Seleccionar instructor para análisis"
+              >
+                <option value="all">Todos</option>
+                {instructors.map(inst => (
+                  <option key={inst.id} value={inst.id}>{inst.name}</option>
                 ))}
               </select>
             </div>
@@ -351,6 +389,42 @@ const InvoiceAnalytics: React.FC = () => {
 
       {/* Gráficos Principales */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      {/* Por Instructor */}
+      <div className="bg-white shadow-md rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Distribución por Instructor {selectedYear}</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instructor</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cursos</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor Total</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Pagados</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Facturados</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Planificados</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {analytics.byInstructor.map((row) => (
+                <tr key={row.instructor}>
+                  <td className="px-3 py-2 text-sm text-gray-900">{row.instructor}</td>
+                  <td className="px-3 py-2 text-sm text-right">{row.courses}</td>
+                  <td className="px-3 py-2 text-sm text-right">{formatCurrency(row.totalValue)}</td>
+                  <td className="px-3 py-2 text-sm text-right">{row.paidCourses}</td>
+                  <td className="px-3 py-2 text-sm text-right">{row.billedCourses}</td>
+                  <td className="px-3 py-2 text-sm text-right">{row.plannedCourses}</td>
+                </tr>
+              ))}
+              {analytics.byInstructor.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-gray-500">No hay datos por instructor para este año.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
         {/* Facturación Mensual (Pagadas, Enviadas, Borradores) */}
         <div className="bg-white shadow-md rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Facturación Mensual {selectedYear}</h3>
@@ -440,13 +514,10 @@ const InvoiceAnalytics: React.FC = () => {
         <div className="bg-white shadow-md rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Estado de Cursos por Valor {selectedYear}</h3>
           <div className="space-y-3 mb-4">
-            {analytics.coursesStatusDistribution.map((status, index) => (
+    {analytics.coursesStatusDistribution.map((status, index) => (
               <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center">
-                  <div 
-                    className="w-4 h-4 rounded-full mr-3" 
-                    style={{ backgroundColor: status.color }}
-                  ></div>
+      <div className={`w-4 h-4 rounded-full mr-3 ${status.colorClass}`}></div>
                   <div>
                     <p className="font-medium text-gray-900">{status.name}</p>
                     <p className="text-sm text-gray-600">{status.count} curso(s)</p>
@@ -482,41 +553,6 @@ const InvoiceAnalytics: React.FC = () => {
                 </div>
               </div>
               
-              {/* Barra de progreso por estados */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs text-gray-600 mb-1">
-                  <span>Distribución por Estado</span>
-                  <span>100%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                  <div className="h-full flex">
-                    {client.paid > 0 && (
-                      <div 
-                        className="bg-green-500 h-full flex items-center justify-center"
-                        style={{ width: `${getStatusPercentage(client.paid, client.total)}%` }}
-                        title={`Pagadas: ${formatCurrency(client.paid)}`}
-                      >
-                      </div>
-                    )}
-                    {client.sent > 0 && (
-                      <div 
-                        className="bg-blue-500 h-full flex items-center justify-center"
-                        style={{ width: `${getStatusPercentage(client.sent, client.total)}%` }}
-                        title={`Enviadas: ${formatCurrency(client.sent)}`}
-                      >
-                      </div>
-                    )}
-                    {client.draft > 0 && (
-                      <div 
-                        className="bg-gray-400 h-full flex items-center justify-center"
-                        style={{ width: `${getStatusPercentage(client.draft, client.total)}%` }}
-                        title={`Borradores: ${formatCurrency(client.draft)}`}
-                      >
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
                 {/* Detalles por estado */}
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   {client.paid > 0 && (
@@ -542,7 +578,6 @@ const InvoiceAnalytics: React.FC = () => {
                   )}
                 </div>
               </div>
-            </div>
           ))}
         </div>
       </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { InvoiceFromCourse, Client, Course, Issuer, Language, TransferOption } from '../types';
-import { loadClients, loadCourses, updateInvoice, validateInvoiceUpdate, diagnoseInvoiceIssues } from '../utils/storage';
+import { InvoiceFromCourse, Client, Course } from '../types';
+import { loadClients, loadCourses, updateInvoice, validateInvoiceUpdate, diagnoseInvoiceIssues, updateCourse } from '../utils/storage';
 import { Edit2, X, Save, AlertCircle, ArrowUp } from 'lucide-react';
 import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
 
@@ -24,7 +24,9 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     paymentTerms: invoice.paymentTerms,
     status: invoice.status,
     transferOption: invoice.transferOption || 'usa',
-    observations: invoice.observations || ''
+    observations: invoice.observations || '',
+    paymentDate: invoice.paymentDate || '',
+    paidAmount: invoice.paidAmount || invoice.total || 0
   });
 
   useEffect(() => {
@@ -70,49 +72,48 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
         total: invoice.total,
         status: formData.status,
         transferOption: formData.transferOption,
-        observations: formData.observations
+        observations: formData.observations,
+        paymentDate: formData.status === 'paid' ? formData.paymentDate : undefined,
+        paidAmount: formData.status === 'paid' ? formData.paidAmount : undefined
       };
 
-      console.log('🔄 Actualizando factura con datos:', invoiceDataToUpdate);
-      console.log('🔍 Verificando emisor antes de actualizar:', {
-        original: invoice.issuer,
-        nuevo: formData.issuer
-      });
-      
+      // Si la factura se marca como pagada, actualizar cursos asociados
+      if (formData.status === 'paid' && invoice.courseIds.length > 0) {
+        for (const courseId of invoice.courseIds) {
+          const course = courses.find(c => c.id === courseId);
+          if (course) {
+            await updateCourse(courseId, {
+              ...course,
+              status: 'pagado',
+              paymentDate: formData.paymentDate,
+              paidAmount: formData.paidAmount,
+              invoiceNumber: formData.invoiceNumber,
+              invoiceDate: formData.invoiceDate
+            });
+          }
+        }
+      }
+
       const updatedInvoice = await updateInvoice(invoice.id, invoiceDataToUpdate);
 
       if (updatedInvoice) {
-        console.log('✅ Factura actualizada exitosamente:', updatedInvoice);
-        console.log('🔍 Verificando emisor después de actualizar:', {
-          emisorEnRespuesta: updatedInvoice.issuer,
-          emisorEnFormulario: formData.issuer
-        });
-        
-        // Validar que todos los campos se guardaron correctamente
         const isValid = await validateInvoiceUpdate(invoice.id, {
           issuer: formData.issuer,
           language: formData.language,
           status: formData.status,
           invoiceNumber: formData.invoiceNumber
         });
-        
         if (isValid) {
           alert('✅ Factura actualizada exitosamente. Todos los campos se guardaron correctamente.');
         } else {
-          console.warn('⚠️ Algunos campos no se actualizaron correctamente');
           alert('⚠️ La factura se actualizó pero algunos campos podrían no haberse guardado correctamente. Revisa la consola para más detalles.');
-          
-          // Ejecutar diagnóstico específico si hay problemas
           await diagnoseInvoiceIssues(invoice.id);
         }
-        
         onSave();
       } else {
-        console.log('❌ updateInvoice retornó null');
         alert('❌ Error al actualizar la factura. Intenta nuevamente.');
       }
     } catch (error) {
-      console.error('❌ Error actualizando factura:', error);
       alert('❌ Error al actualizar la factura. Revisa la consola para más detalles.');
     }
   };
@@ -163,6 +164,41 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
 
         <form onSubmit={handleSubmit} className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* Si la factura se marca como pagada, mostrar campos de pago */}
+            {formData.status === 'paid' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Fecha de Pago *
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.paymentDate}
+                    onChange={e => handleInputChange('paymentDate', e.target.value)}
+                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    required
+                    title="Fecha en que se realizó el pago"
+                    placeholder="YYYY-MM-DD"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Valor Pagado *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.paidAmount}
+                    onChange={e => handleInputChange('paidAmount', Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    required
+                    title="Valor pagado de la factura"
+                    placeholder="Ej: 1000.00"
+                  />
+                </div>
+              </>
+            )}
             {/* Número de Factura */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -395,4 +431,4 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
   );
 };
 
-export default InvoiceEditor; 
+export default InvoiceEditor;

@@ -26,6 +26,7 @@ export interface Course {
   hourlyRate: number;
   totalValue: number;
   clientId: string; // Ahora referencia al ID del cliente
+  instructorId: string; // Referencia al instructor que dicta el curso
   invoiceNumber: string;
   invoiceDate: string;
   status: 'creado' | 'dictado' | 'facturado' | 'pagado';
@@ -59,11 +60,19 @@ export interface InvoiceFromCourse {
   status: 'draft' | 'sent' | 'paid';
   transferOption: TransferOption;
   observations?: string;
+  paymentDate?: string; // Fecha en que se pagó la factura
+  paidAmount?: number;  // Valor pagado de la factura
 }
 
 export type Issuer = 'colombia' | 'usa';
 
 export type Language = 'es' | 'en';
+
+export interface Instructor {
+  id: string;
+  name: string;
+  active: boolean;
+}
 
 export interface Blackout {
   id: string;
