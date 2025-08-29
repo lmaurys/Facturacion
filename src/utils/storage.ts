@@ -1265,7 +1265,7 @@ export const syncWithAzure = async (): Promise<{ success: boolean; message: stri
   try {
     await autoSyncAfterChange();
     return { success: true, message: 'Sincronización exitosa' };
-  } catch (error) {
+  } catch {
     return { success: false, message: 'Error en sincronización' };
   }
 }; 

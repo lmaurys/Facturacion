@@ -5,16 +5,14 @@ import {
   Eye, 
   Edit2, 
   Trash2, 
-  Plus, 
   Search, 
   ArrowUpDown, 
   ArrowUp, 
   ArrowDown,
   Send,
   DollarSign,
-  FileText,
-  Calendar,
-  Filter
+  Filter,
+  Calendar
 } from 'lucide-react';
 import { formatDate } from '../utils/dateUtils';
 
@@ -58,17 +56,17 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     loadData();
   }, []);
 
-  const getClientName = (clientId: string): string => {
+  const getClientName = React.useCallback((clientId: string): string => {
     const client = clients.find(c => c.id === clientId);
     return client ? client.name : 'Cliente no encontrado';
-  };
+  }, [clients]);
 
-  const getCourseNames = (courseIds: string[]): string[] => {
+  const getCourseNames = React.useCallback((courseIds: string[]): string[] => {
     return courseIds.map(courseId => {
       const course = courses.find(c => c.id === courseId);
       return course ? course.courseName : 'Curso no encontrado';
     });
-  };
+  }, [courses]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', {
@@ -214,7 +212,7 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
   };
 
   const filteredAndSortedInvoices = React.useMemo(() => {
-    let filtered = invoices.filter(invoice => {
+    const filtered = invoices.filter(invoice => {
       const courseNames = getCourseNames(invoice.courseIds);
       const matchesSearch = 
         invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -230,8 +228,8 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
 
     if (sortKey && sortDirection) {
       filtered.sort((a, b) => {
-        let aValue: any = a[sortKey];
-        let bValue: any = b[sortKey];
+        let aValue: string | number = a[sortKey];
+        let bValue: string | number = b[sortKey];
 
         // Casos especiales para ordenamiento
         if (sortKey === 'clientId') {
@@ -242,7 +240,7 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
           bValue = new Date(b.invoiceDate).getTime();
         }
 
-        if (typeof aValue === 'string') {
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
           aValue = aValue.toLowerCase();
           bValue = bValue.toLowerCase();
         }
@@ -254,7 +252,7 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
     }
 
     return filtered;
-  }, [invoices, searchTerm, statusFilter, clientFilter, sortKey, sortDirection, clients, courses]);
+  }, [invoices, searchTerm, statusFilter, clientFilter, sortKey, sortDirection, getClientName, getCourseNames]);
 
   const clearFilters = () => {
     setSearchTerm('');

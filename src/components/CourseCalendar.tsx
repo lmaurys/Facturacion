@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Course, Client, Blackout } from '../types';
-import { loadCourses, loadClients, loadBlackouts, addBlackout, deleteBlackout } from '../utils/storage';
-import { ChevronLeft, ChevronRight, Calendar, Clock, User, DollarSign, Ban, Plus } from 'lucide-react';
+import { Course, Client, Blackout, Instructor } from '../types';
+import { loadCourses, loadClients, loadBlackouts, addBlackout, deleteBlackout, loadInstructors } from '../utils/storage';
+import { ChevronLeft, ChevronRight, Calendar, User, DollarSign, Ban, Plus } from 'lucide-react';
 
 interface CourseCalendarProps {
   onCourseClick?: (course: Course) => void;
@@ -19,18 +19,22 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const [showBlackoutList, setShowBlackoutList] = useState(false);
   const [blackoutListTitle, setBlackoutListTitle] = useState('');
   const [blackoutsForDay, setBlackoutsForDay] = useState<Blackout[]>([]);
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>('all');
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [loadedCourses, loadedClients, loadedBlackouts] = await Promise.all([
+        const [loadedCourses, loadedClients, loadedBlackouts, loadedInstructors] = await Promise.all([
           loadCourses(),
           loadClients(),
-          loadBlackouts()
+          loadBlackouts(),
+          loadInstructors()
         ]);
         setCourses(loadedCourses);
         setClients(loadedClients);
         setBlackouts(loadedBlackouts);
+        setInstructors(loadedInstructors);
         
         // Obtener fecha de última actualización
         const storedLastUpdate = localStorage.getItem('lastDataUpdate');
@@ -41,9 +45,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
           setLastUpdate(now);
           localStorage.setItem('lastDataUpdate', now);
         }
-      } catch (error) {
-        console.error('Error loading data:', error);
-      } finally {
+    } catch {
+      // noop
+    } finally {
         setLoading(false);
       }
     };
@@ -67,12 +71,17 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     const handleBlackoutUpdate = () => {
       loadBlackouts().then(setBlackouts);
     };
-    window.addEventListener('blackoutUpdated', handleBlackoutUpdate as any);
+  window.addEventListener('blackoutUpdated', handleBlackoutUpdate as EventListener);
+    const handleInstructorUpdate = () => {
+      loadInstructors().then(setInstructors);
+    };
+  window.addEventListener('instructorUpdated', handleInstructorUpdate as EventListener);
     
     return () => {
       window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
       window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('blackoutUpdated', handleBlackoutUpdate as any);
+  window.removeEventListener('blackoutUpdated', handleBlackoutUpdate as EventListener);
+  window.removeEventListener('instructorUpdated', handleInstructorUpdate as EventListener);
     };
   }, []);
 
@@ -99,7 +108,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
         hour: '2-digit',
         minute: '2-digit'
       });
-    } catch (error) {
+    } catch {
       return '';
     }
   };
@@ -167,8 +176,13 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     return new Date(year, month - 1, day); // month - 1 porque los meses en JS van de 0-11
   };
 
+  // Filtrar por instructor si aplica
+  const effectiveCourses = selectedInstructorId === 'all' 
+    ? courses 
+    : courses.filter(c => c.instructorId === selectedInstructorId);
+
   // Filtrar cursos del mes actual
-  const coursesInMonth = courses.filter(course => {
+  const coursesInMonth = effectiveCourses.filter(course => {
     const startDate = createLocalDate(course.startDate);
     const endDate = createLocalDate(course.endDate);
     
@@ -360,6 +374,20 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
             >
               <ChevronRight size={20} />
             </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-700">Instructor:</label>
+            <select
+              value={selectedInstructorId}
+              onChange={(e) => setSelectedInstructorId(e.target.value)}
+              className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Filtrar por instructor"
+            >
+              <option value="all">Todos</option>
+              {instructors.filter(i => i.active).map(inst => (
+                <option key={inst.id} value={inst.id}>{inst.name}</option>
+              ))}
+            </select>
           </div>
           <button
             onClick={() => setShowBlackoutForm(true)}

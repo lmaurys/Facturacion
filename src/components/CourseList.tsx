@@ -157,7 +157,7 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
     }
 
     return filtered;
-  }, [courses, searchTerm, statusFilter, clientFilter, instructorFilter, sortKey, sortDirection, clients, getClientName]);
+  }, [courses, searchTerm, statusFilter, clientFilter, instructorFilter, sortKey, sortDirection, getClientName]);
 
   const clearFilters = () => {
     setSearchTerm('');

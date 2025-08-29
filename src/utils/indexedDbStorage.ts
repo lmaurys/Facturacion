@@ -1,5 +1,8 @@
 import { Course } from '../types';
 
+// Local shape stored in IndexedDB can carry timestamps
+type IndexedDBCourse = Course & { createdAt?: string; updatedAt?: string };
+
 const DB_NAME = 'FacturacionDB';
 const DB_VERSION = 1;
 const COURSES_STORE = 'courses';
@@ -46,9 +49,9 @@ export const loadCoursesFromIndexedDB = async (): Promise<Course[]> => {
 
       request.onsuccess = () => {
         // Ordenar por fecha de creación (más recientes primero)
-        const courses = request.result.sort((a: any, b: any) => {
-          const dateA = new Date(a.createdAt || a.id).getTime();
-          const dateB = new Date(b.createdAt || b.id).getTime();
+        const courses = (request.result as IndexedDBCourse[]).sort((a, b) => {
+          const dateA = new Date((a.createdAt as string | undefined) || a.id).getTime();
+          const dateB = new Date((b.createdAt as string | undefined) || b.id).getTime();
           return dateB - dateA;
         });
         resolve(courses);
@@ -75,16 +78,16 @@ export const addCourseToIndexedDB = async (courseData: Omit<Course, 'id'>): Prom
     };
 
     // Agregar timestamp de creación
-    (newCourse as any).createdAt = new Date().toISOString();
-    (newCourse as any).updatedAt = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    const newCourseDb: IndexedDBCourse = { ...newCourse, createdAt: nowIso, updatedAt: nowIso };
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
       const store = transaction.objectStore(COURSES_STORE);
-      const request = store.add(newCourse);
+      const request = store.add(newCourseDb);
 
       request.onsuccess = () => {
-        resolve(newCourse);
+  resolve(newCourse);
       };
 
       request.onerror = () => {
@@ -108,7 +111,7 @@ export const updateCourseInIndexedDB = async (courseId: string, courseData: Omit
     };
 
     // Agregar timestamp de actualización
-    (updatedCourse as any).updatedAt = new Date().toISOString();
+    const nowIso = new Date().toISOString();
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
@@ -118,12 +121,14 @@ export const updateCourseInIndexedDB = async (courseId: string, courseData: Omit
       const getRequest = store.get(courseId);
       
       getRequest.onsuccess = () => {
-        const existingCourse = getRequest.result;
-        if (existingCourse) {
-          (updatedCourse as any).createdAt = existingCourse.createdAt;
-        }
+        const existingCourse = getRequest.result as IndexedDBCourse | undefined;
+        const updatedCourseDb: IndexedDBCourse = {
+          ...updatedCourse,
+          createdAt: existingCourse?.createdAt,
+          updatedAt: nowIso,
+        };
         
-        const putRequest = store.put(updatedCourse);
+        const putRequest = store.put(updatedCourseDb);
         
         putRequest.onsuccess = () => {
           resolve(updatedCourse);
@@ -151,7 +156,7 @@ export const deleteCourseFromIndexedDB = async (courseId: string): Promise<boole
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
       const store = transaction.objectStore(COURSES_STORE);
       const request = store.delete(courseId);
@@ -176,7 +181,7 @@ export const getCourseByIdFromIndexedDB = async (courseId: string): Promise<Cour
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readonly');
       const store = transaction.objectStore(COURSES_STORE);
       const request = store.get(courseId);
@@ -213,7 +218,7 @@ export const importCoursesFromJSON = async (jsonData: string): Promise<boolean> 
     const courses: Course[] = JSON.parse(jsonData);
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
       const store = transaction.objectStore(COURSES_STORE);
       

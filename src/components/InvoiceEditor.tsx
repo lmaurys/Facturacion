@@ -48,8 +48,8 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     if (!el) return;
     const onScroll = () => setShowScrollTop(el.scrollTop > 300);
     onScroll();
-    el.addEventListener('scroll', onScroll, { passive: true } as any);
-    return () => el.removeEventListener('scroll', onScroll as any);
+  el.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions);
+  return () => el.removeEventListener('scroll', onScroll as EventListener);
   }, []);
 
   const relatedCourses = courses.filter(course => 
@@ -113,7 +113,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
       } else {
         alert('❌ Error al actualizar la factura. Intenta nuevamente.');
       }
-    } catch (error) {
+    } catch {
       alert('❌ Error al actualizar la factura. Revisa la consola para más detalles.');
     }
   };
@@ -122,10 +122,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({ invoice, onSave, onCancel
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const getClientName = (clientId: string): string => {
-    const client = clients.find(c => c.id === clientId);
-    return client ? client.name : 'Cliente no encontrado';
-  };
+  // getClientName no se usa en esta vista
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', {

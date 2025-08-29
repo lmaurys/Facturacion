@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Invoice, Item, Issuer, Language, issuers, TransferOption, Client } from '../types';
+import { Invoice, Item, Issuer, Language, TransferOption, Client } from '../types';
 import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
 import { loadClients } from '../utils/storage';
 import { Plus, X, Edit2, Users, FileText, Settings, CreditCard } from 'lucide-react';
@@ -13,7 +13,6 @@ interface InvoiceFormProps {
   selectedIssuer: Issuer;
   setSelectedIssuer: (issuer: Issuer) => void;
   invoiceNumber: string;
-  setInvoiceNumber: (number: string) => void;
   paymentTerms: number;
   setPaymentTerms: (terms: number) => void;
   language: Language;
@@ -34,7 +33,6 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
   selectedIssuer,
   setSelectedIssuer,
   invoiceNumber,
-  setInvoiceNumber,
   paymentTerms,
   setPaymentTerms,
   language,
@@ -296,6 +294,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedClientId}
               onChange={(e) => handleClientSelect(e.target.value)}
+              title={language === 'es' ? 'Seleccionar cliente' : 'Select client'}
             >
               <option value="">
                 {language === 'es' ? 'Seleccionar cliente existente...' : 'Select existing client...'}
@@ -426,6 +425,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                 onChange={handleItemChange}
                 min="1"
                 step="0.01"
+                title={language === 'es' ? 'Cantidad' : 'Quantity'}
                 required
               />
             </div>
@@ -442,6 +442,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                 onChange={handleItemChange}
                 min="0"
                 step="0.01"
+                title={language === 'es' ? 'Precio unitario' : 'Unit price'}
                 required
               />
             </div>
@@ -509,12 +510,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                       <button
                         onClick={() => handleEditItem(index)}
                         className="text-blue-600 hover:text-blue-900"
+                        title={language === 'es' ? 'Editar item' : 'Edit item'}
                       >
                         <Edit2 className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteItem(index)}
                         className="text-red-600 hover:text-red-900"
+                        title={language === 'es' ? 'Eliminar item' : 'Delete item'}
                       >
                         <X className="h-4 w-4" />
                       </button>

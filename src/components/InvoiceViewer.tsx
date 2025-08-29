@@ -1,12 +1,12 @@
 import React, { useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { InvoiceFromCourse, Client, Course, Issuer, Language, issuers } from '../types';
+import { InvoiceFromCourse, Client, Course, issuers } from '../types';
 import { Printer, Download, X } from 'lucide-react';
 import { numberToWords } from '../utils/numberToWords';
-import { invoiceLabels, invoiceFixedValues, transferOptions } from '../constants/invoiceConstants';
+import { invoiceLabels, transferOptions } from '../constants/invoiceConstants';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { formatHours, formatCurrency } from '../utils/numberUtils';
+import { formatHours } from '../utils/numberUtils';
 
 interface InvoiceViewerProps {
   invoice: InvoiceFromCourse;

@@ -1,5 +1,5 @@
 import { Course, Client, InvoiceFromCourse } from '../types';
-import { SyncData, syncWithAzure, saveDataToAzure, loadDataFromAzure, saveDataToAzureAlternative } from './azureBlobSync';
+import { SyncData, syncWithAzure, saveDataToAzure, loadDataFromAzure } from './azureBlobSync';
 
 const DB_NAME = 'FacturacionDB';
 const DB_VERSION = 2; // Incrementamos la versión para la nueva estructura
@@ -56,17 +56,18 @@ export const loadCoursesFromDB = async (): Promise<Course[]> => {
   try {
     const db = await initDB();
     
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
       const transaction = db.transaction([COURSES_STORE], 'readonly');
       const store = transaction.objectStore(COURSES_STORE);
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const courses = request.result.sort((a: any, b: any) => {
-          const dateA = new Date(a.createdAt || a.id).getTime();
-          const dateB = new Date(b.createdAt || b.id).getTime();
+        const raw = request.result as Array<{ id: string; createdAt?: string }>;
+        const courses = raw.sort((a, b) => {
+          const dateA = new Date(a.createdAt ?? a.id).getTime();
+          const dateB = new Date(b.createdAt ?? b.id).getTime();
           return dateB - dateA;
-        });
+        }) as unknown as Course[];
         resolve(courses);
       };
 
@@ -89,10 +90,10 @@ export const addCourseToDB = async (courseData: Omit<Course, 'id'>): Promise<Cou
       id: `course_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     };
 
-    (newCourse as any).createdAt = new Date().toISOString();
-    (newCourse as any).updatedAt = new Date().toISOString();
+  (newCourse as unknown as { createdAt?: string; updatedAt?: string }).createdAt = new Date().toISOString();
+  (newCourse as unknown as { createdAt?: string; updatedAt?: string }).updatedAt = new Date().toISOString();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
       const store = transaction.objectStore(COURSES_STORE);
       const request = store.add(newCourse);
@@ -103,7 +104,7 @@ export const addCourseToDB = async (courseData: Omit<Course, 'id'>): Promise<Cou
 
       request.onerror = () => {
         console.error('Error adding course to IndexedDB:', request.error);
-        reject(request.error);
+        resolve(null);
       };
     });
   } catch (error) {
@@ -120,9 +121,9 @@ export const updateCourseInDB = async (courseId: string, courseData: Omit<Course
       id: courseId,
     };
 
-    (updatedCourse as any).updatedAt = new Date().toISOString();
+  (updatedCourse as unknown as { updatedAt?: string }).updatedAt = new Date().toISOString();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
       const store = transaction.objectStore(COURSES_STORE);
       
@@ -131,7 +132,7 @@ export const updateCourseInDB = async (courseId: string, courseData: Omit<Course
       getRequest.onsuccess = () => {
         const existingCourse = getRequest.result;
         if (existingCourse) {
-          (updatedCourse as any).createdAt = existingCourse.createdAt;
+          (updatedCourse as unknown as { createdAt?: string }).createdAt = (existingCourse as unknown as { createdAt?: string }).createdAt;
         }
         
         const putRequest = store.put(updatedCourse);
@@ -142,13 +143,11 @@ export const updateCourseInDB = async (courseId: string, courseData: Omit<Course
         
         putRequest.onerror = () => {
           console.error('Error updating course in IndexedDB:', putRequest.error);
-          reject(putRequest.error);
         };
       };
       
       getRequest.onerror = () => {
         console.error('Error finding course to update:', getRequest.error);
-        reject(getRequest.error);
       };
     });
   } catch (error) {
@@ -161,7 +160,7 @@ export const deleteCourseFromDB = async (courseId: string): Promise<boolean> => 
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readwrite');
       const store = transaction.objectStore(COURSES_STORE);
       const request = store.delete(courseId);
@@ -185,7 +184,7 @@ export const getCourseByIdFromDB = async (courseId: string): Promise<Course | nu
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([COURSES_STORE], 'readonly');
       const store = transaction.objectStore(COURSES_STORE);
       const request = store.get(courseId);
@@ -211,19 +210,19 @@ export const loadClientsFromDB = async (): Promise<Client[]> => {
   try {
     const db = await initDB();
     
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([CLIENTS_STORE], 'readonly');
       const store = transaction.objectStore(CLIENTS_STORE);
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const clients = request.result.sort((a: any, b: any) => a.name.localeCompare(b.name));
+        const clients = (request.result as Client[]).sort((a, b) => a.name.localeCompare(b.name));
         resolve(clients);
       };
 
       request.onerror = () => {
         console.error('Error loading clients from IndexedDB:', request.error);
-        reject(request.error);
+        resolve([]);
       };
     });
   } catch (error) {
@@ -240,10 +239,10 @@ export const addClientToDB = async (clientData: Omit<Client, 'id'>): Promise<Cli
       id: `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     };
 
-    (newClient as any).createdAt = new Date().toISOString();
-    (newClient as any).updatedAt = new Date().toISOString();
+  (newClient as unknown as { createdAt?: string; updatedAt?: string }).createdAt = new Date().toISOString();
+  (newClient as unknown as { createdAt?: string; updatedAt?: string }).updatedAt = new Date().toISOString();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([CLIENTS_STORE], 'readwrite');
       const store = transaction.objectStore(CLIENTS_STORE);
       const request = store.add(newClient);
@@ -254,7 +253,7 @@ export const addClientToDB = async (clientData: Omit<Client, 'id'>): Promise<Cli
 
       request.onerror = () => {
         console.error('Error adding client to IndexedDB:', request.error);
-        reject(request.error);
+        resolve(null);
       };
     });
   } catch (error) {
@@ -271,9 +270,9 @@ export const updateClientInDB = async (clientId: string, clientData: Omit<Client
       id: clientId,
     };
 
-    (updatedClient as any).updatedAt = new Date().toISOString();
+  (updatedClient as unknown as { updatedAt?: string }).updatedAt = new Date().toISOString();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([CLIENTS_STORE], 'readwrite');
       const store = transaction.objectStore(CLIENTS_STORE);
       
@@ -282,7 +281,7 @@ export const updateClientInDB = async (clientId: string, clientData: Omit<Client
       getRequest.onsuccess = () => {
         const existingClient = getRequest.result;
         if (existingClient) {
-          (updatedClient as any).createdAt = existingClient.createdAt;
+          (updatedClient as unknown as { createdAt?: string }).createdAt = (existingClient as unknown as { createdAt?: string }).createdAt;
         }
         
         const putRequest = store.put(updatedClient);
@@ -293,13 +292,11 @@ export const updateClientInDB = async (clientId: string, clientData: Omit<Client
         
         putRequest.onerror = () => {
           console.error('Error updating client in IndexedDB:', putRequest.error);
-          reject(putRequest.error);
         };
       };
       
       getRequest.onerror = () => {
         console.error('Error finding client to update:', getRequest.error);
-        reject(getRequest.error);
       };
     });
   } catch (error) {
@@ -312,7 +309,7 @@ export const deleteClientFromDB = async (clientId: string): Promise<boolean> => 
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([CLIENTS_STORE], 'readwrite');
       const store = transaction.objectStore(CLIENTS_STORE);
       const request = store.delete(clientId);
@@ -336,7 +333,7 @@ export const getClientByIdFromDB = async (clientId: string): Promise<Client | nu
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([CLIENTS_STORE], 'readonly');
       const store = transaction.objectStore(CLIENTS_STORE);
       const request = store.get(clientId);
@@ -473,17 +470,14 @@ export const loadInvoicesFromDB = async (): Promise<InvoiceFromCourse[]> => {
   try {
     const db = await initDB();
     
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
       const transaction = db.transaction([INVOICES_STORE], 'readonly');
       const store = transaction.objectStore(INVOICES_STORE);
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const invoices = request.result.sort((a: any, b: any) => {
-          const dateA = new Date(a.invoiceDate).getTime();
-          const dateB = new Date(b.invoiceDate).getTime();
-          return dateB - dateA;
-        });
+        const raw = request.result as Array<{ invoiceDate: string }>;
+        const invoices = raw.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()) as unknown as InvoiceFromCourse[];
         resolve(invoices);
       };
 
@@ -506,10 +500,10 @@ export const addInvoiceToDB = async (invoiceData: Omit<InvoiceFromCourse, 'id'>)
       id: `invoice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     };
 
-    (newInvoice as any).createdAt = new Date().toISOString();
-    (newInvoice as any).updatedAt = new Date().toISOString();
+  (newInvoice as unknown as { createdAt?: string; updatedAt?: string }).createdAt = new Date().toISOString();
+  (newInvoice as unknown as { createdAt?: string; updatedAt?: string }).updatedAt = new Date().toISOString();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([INVOICES_STORE], 'readwrite');
       const store = transaction.objectStore(INVOICES_STORE);
       const request = store.add(newInvoice);
@@ -520,7 +514,7 @@ export const addInvoiceToDB = async (invoiceData: Omit<InvoiceFromCourse, 'id'>)
 
       request.onerror = () => {
         console.error('Error adding invoice to IndexedDB:', request.error);
-        reject(request.error);
+        resolve(null);
       };
     });
   } catch (error) {
@@ -537,9 +531,9 @@ export const updateInvoiceInDB = async (invoiceId: string, invoiceData: Omit<Inv
       id: invoiceId,
     };
 
-    (updatedInvoice as any).updatedAt = new Date().toISOString();
+  (updatedInvoice as unknown as { updatedAt?: string }).updatedAt = new Date().toISOString();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([INVOICES_STORE], 'readwrite');
       const store = transaction.objectStore(INVOICES_STORE);
       
@@ -548,7 +542,7 @@ export const updateInvoiceInDB = async (invoiceId: string, invoiceData: Omit<Inv
       getRequest.onsuccess = () => {
         const existingInvoice = getRequest.result;
         if (existingInvoice) {
-          (updatedInvoice as any).createdAt = existingInvoice.createdAt;
+          (updatedInvoice as unknown as { createdAt?: string }).createdAt = (existingInvoice as unknown as { createdAt?: string }).createdAt;
         }
         
         const putRequest = store.put(updatedInvoice);
@@ -559,13 +553,11 @@ export const updateInvoiceInDB = async (invoiceId: string, invoiceData: Omit<Inv
         
         putRequest.onerror = () => {
           console.error('Error updating invoice in IndexedDB:', putRequest.error);
-          reject(putRequest.error);
         };
       };
       
       getRequest.onerror = () => {
         console.error('Error finding invoice to update:', getRequest.error);
-        reject(getRequest.error);
       };
     });
   } catch (error) {
@@ -578,7 +570,7 @@ export const deleteInvoiceFromDB = async (invoiceId: string): Promise<boolean> =
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([INVOICES_STORE], 'readwrite');
       const store = transaction.objectStore(INVOICES_STORE);
       const request = store.delete(invoiceId);
@@ -602,7 +594,7 @@ export const getInvoiceByIdFromDB = async (invoiceId: string): Promise<InvoiceFr
   try {
     const db = await initDB();
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
       const transaction = db.transaction([INVOICES_STORE], 'readonly');
       const store = transaction.objectStore(INVOICES_STORE);
       const request = store.get(invoiceId);
@@ -656,7 +648,7 @@ export const exportAndSyncToAzure = async (): Promise<{ success: boolean; messag
       };
     } else {
       // Intentar método alternativo
-      const altSuccess = await saveDataToAzureAlternative(syncData);
+      const altSuccess = await saveDataToAzure(syncData);
       if (altSuccess) {
         return {
           success: true,

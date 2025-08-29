@@ -9,7 +9,7 @@ import InvoiceManagement from './components/InvoiceManagement';
 import DataManagement from './components/DataManagement';
 import InvoiceAnalytics from './components/InvoiceAnalytics';
 import InvoiceFromCourses from './components/InvoiceFromCourses';
-import { Invoice, Item, Issuer, Language, TransferOption, Client, InvoiceFromCourse, issuers } from './types';
+import { Invoice, Item, Issuer, Language, TransferOption, Client, InvoiceFromCourse } from './types';
 import { addInvoice, loadClients, initializeAutoSync, initializeFromAzure } from './utils/storage';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -20,7 +20,6 @@ const App: React.FC = () => {
   const [currentMode, setCurrentMode] = useState<AppMode>('clients');
   const [showInvoiceFromCourses, setShowInvoiceFromCourses] = useState(false);
   const [hasTriedAutoLoad, setHasTriedAutoLoad] = useState(false);
-  const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [invoice, setInvoice] = useState<Invoice>({
     clientName: '',
     clientNIT: '',
@@ -68,7 +67,7 @@ const App: React.FC = () => {
     };
 
     // Permitir uso inmediato de la app mientras se cargan los datos
-    setIsAppInitialized(true);
+  // App usable mientras se cargan los datos
     initializeApp();
   }, [hasTriedAutoLoad]);
 
@@ -298,7 +297,7 @@ const App: React.FC = () => {
     }
 
     if (currentMode === 'data') {
-      return <DataManagement onDataImported={() => console.log('Data imported')} />;
+  return <DataManagement />;
     }
 
     return (
@@ -315,7 +314,6 @@ const App: React.FC = () => {
                 selectedIssuer={selectedIssuer}
                 setSelectedIssuer={setSelectedIssuer}
                 invoiceNumber={invoiceNumber}
-                setInvoiceNumber={setInvoiceNumber}
                 paymentTerms={paymentTerms}
                 setPaymentTerms={setPaymentTerms}
                 language={language}
@@ -502,7 +500,7 @@ const App: React.FC = () => {
               ] as const).map(item => (
                 <button
                   key={item.key}
-                  onClick={() => { setCurrentMode(item.key as any); setMobileMenuOpen(false); }}
+                  onClick={() => { setCurrentMode(item.key as AppMode); setMobileMenuOpen(false); }}
                   className={`w-full flex items-center px-3 py-2 rounded-md text-left text-sm ${
                     currentMode === item.key ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
                   }`}

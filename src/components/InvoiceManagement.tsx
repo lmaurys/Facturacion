@@ -3,36 +3,19 @@ import InvoiceList from './InvoiceList';
 import InvoiceViewer from './InvoiceViewer';
 import InvoiceEditor from './InvoiceEditor';
 import { InvoiceFromCourse, Client, Course } from '../types';
-import { loadInvoices, deleteInvoice, loadClients, loadCourses, debugCompleteSystem, forceReloadFromAzure } from '../utils/storage';
-import { RefreshCw, AlertCircle } from 'lucide-react';
+import { loadInvoices, deleteInvoice, loadClients, loadCourses } from '../utils/storage';
 
 const InvoiceManagement: React.FC = () => {
   const [invoices, setInvoices] = useState<InvoiceFromCourse[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [viewingInvoice, setViewingInvoice] = useState<InvoiceFromCourse | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceFromCourse | null>(null);
 
   useEffect(() => {
     loadAllData();
-    
-    // Listeners para eventos de sincronización
-    const handleSyncStart = () => setSyncStatus('syncing');
-    const handleSyncSuccess = () => setSyncStatus('success');
-    const handleSyncError = () => setSyncStatus('error');
-    
-    window.addEventListener('azureSyncStart', handleSyncStart);
-    window.addEventListener('azureSyncSuccess', handleSyncSuccess);
-    window.addEventListener('azureSyncError', handleSyncError);
-    
-    return () => {
-      window.removeEventListener('azureSyncStart', handleSyncStart);
-      window.removeEventListener('azureSyncSuccess', handleSyncSuccess);
-      window.removeEventListener('azureSyncError', handleSyncError);
-    };
+  return () => {};
   }, []);
 
   const loadAllData = async () => {
@@ -53,54 +36,7 @@ const InvoiceManagement: React.FC = () => {
     }
   };
 
-  const handleForceSync = async () => {
-    try {
-      setSyncing(true);
-      console.log('🔄 Forzando sincronización...');
-      const { syncWithAzure } = await import('../utils/storage');
-      const result = await syncWithAzure();
-      
-      if (result.success) {
-        console.log('✅ Sincronización forzada exitosa');
-        await loadAllData(); // Recargar datos después de sincronizar
-      } else {
-        console.error('❌ Error en sincronización forzada:', result.message);
-      }
-    } catch (error) {
-      console.error('❌ Error en sincronización forzada:', error);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleDiagnosticMode = () => {
-    console.log('🔍 Iniciando diagnóstico del sistema...');
-    debugCompleteSystem();
-  };
-
-  const handleForceReload = async () => {
-    try {
-      setSyncing(true);
-      setSyncStatus('syncing');
-      console.log('🔄 Forzando recarga completa desde Azure...');
-      
-      const success = await forceReloadFromAzure();
-      
-      if (success) {
-        console.log('✅ Recarga completa exitosa');
-        setSyncStatus('success');
-        await loadAllData(); // Recargar datos en el componente
-      } else {
-        console.error('❌ Error en recarga completa');
-        setSyncStatus('error');
-      }
-    } catch (error) {
-      console.error('❌ Error en recarga forzada:', error);
-      setSyncStatus('error');
-    } finally {
-      setSyncing(false);
-    }
-  };
+  // Controles avanzados de sync/diagnóstico removidos del encabezado para simplificar
 
   const handleViewInvoice = (invoice: InvoiceFromCourse) => {
     setViewingInvoice(invoice);
