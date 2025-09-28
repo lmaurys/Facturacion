@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { InvoiceFromCourse, Client, Course, Instructor } from '../types';
 import { loadInvoices, loadClients, loadCourses, loadInstructors } from '../utils/storage';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, DollarSign, FileText, Users, Calendar, BarChart3 } from 'lucide-react';
 
 interface AnalyticsData {
   monthlyRevenue: Array<{ month: string; paid: number; sent: number; draft: number; invoices: number }>;
   monthlyCoursesCreated: Array<{ month: string; courses: number; totalValue: number }>;
-  statusDistribution: Array<{ name: string; value: number; color: string }>;
   topClients: Array<{ 
     name: string; 
     total: number; 
@@ -34,12 +33,14 @@ const InvoiceAnalytics: React.FC = () => {
     loadData();
   }, []);
 
+  // Helpers sin zona horaria para fechas en formato YYYY-MM-DD (definidos una vez)
+  const getYear = React.useCallback((iso: string) => parseInt(iso.slice(0, 4), 10), []);
+  const getMonthIndex = React.useCallback((iso: string) => parseInt(iso.slice(5, 7), 10) - 1, []); // 0-11
+
   const processAnalytics = React.useCallback(() => {
     // Helper para formatear mes
     // Cursos del año y filtrado por instructor (si aplica)
-    const yearCoursesAll = courses.filter(course => 
-      new Date(course.startDate).getFullYear() === selectedYear
-    );
+    const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
     const yearCourses = selectedInstructorId === 'all' 
       ? yearCoursesAll 
       : yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
@@ -47,9 +48,7 @@ const InvoiceAnalytics: React.FC = () => {
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
 
     // Facturas del año y filtradas por cursos del instructor (si aplica)
-    const yearInvoicesAll = invoices.filter(invoice => 
-      new Date(invoice.invoiceDate).getFullYear() === selectedYear
-    );
+    const yearInvoicesAll = invoices.filter(invoice => getYear(invoice.invoiceDate) === selectedYear);
 
     // Fallback de relación: si una factura no tiene courseIds (factura tradicional), intentar inferir cursos
     // por invoiceNumber + clientId + año para que aparezca en filtro por instructor si corresponde.
@@ -75,7 +74,7 @@ const InvoiceAnalytics: React.FC = () => {
 
     // 1. Ingresos mensuales (pagadas, enviadas y borradores)
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
-      const monthInvoices = yearInvoices.filter(invoice => new Date(invoice.invoiceDate).getMonth() === i);
+      const monthInvoices = yearInvoices.filter(invoice => getMonthIndex(invoice.invoiceDate) === i);
       const paidInvoices = monthInvoices.filter(inv => inv.status === 'paid');
       const sentOnlyInvoices = monthInvoices.filter(inv => inv.status === 'sent');
       const draftInvoices = monthInvoices.filter(inv => inv.status === 'draft');
@@ -89,9 +88,7 @@ const InvoiceAnalytics: React.FC = () => {
     });
 
     const monthlyCoursesData = Array.from({ length: 12 }, (_, i) => {
-      const monthCourses = yearCourses.filter(course => 
-        new Date(course.startDate).getMonth() === i
-      );
+      const monthCourses = yearCourses.filter(course => getMonthIndex(course.startDate) === i);
       
       return {
         month: new Date(selectedYear, i, 1).toLocaleDateString('es-ES', { month: 'short' }),
@@ -100,20 +97,7 @@ const InvoiceAnalytics: React.FC = () => {
       };
     });
 
-    // 3. Distribución por estado (por valor total, no cantidad)
-    const statusTotals = {
-      draft: yearInvoices.filter(inv => inv.status === 'draft').reduce((sum, inv) => sum + inv.total, 0),
-      sent: yearInvoices.filter(inv => inv.status === 'sent').reduce((sum, inv) => sum + inv.total, 0),
-      paid: yearInvoices.filter(inv => inv.status === 'paid').reduce((sum, inv) => sum + (inv.paidAmount ?? inv.total), 0)
-    };
-
-    const statusDistribution = [
-      { name: 'Borradores', value: statusTotals.draft, color: '#9CA3AF' },
-      { name: 'Enviadas', value: statusTotals.sent, color: '#3B82F6' },
-      { name: 'Pagadas', value: statusTotals.paid, color: '#10B981' }
-    ].filter(item => item.value > 0); // Solo mostrar estados con valor
-
-    // 4. Top clientes con segmentación por estado
+    // 3. Top clientes con segmentación por estado
     //    y cálculo de facturación esperada (cursos creados + dictados)
     const expectedBillingByClient = new Map<string, number>();
     yearCourses
@@ -171,7 +155,7 @@ const InvoiceAnalytics: React.FC = () => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
 
-    // 5. Distribución de cursos por estado (mejorada)
+  // 4. Distribución de cursos por estado (mejorada)
     const coursesByStatus = {
       creado: yearCourses.filter(c => c.status === 'creado'),
       dictado: yearCourses.filter(c => c.status === 'dictado'),
@@ -191,7 +175,7 @@ const InvoiceAnalytics: React.FC = () => {
       };
     }).filter(item => item.count > 0); // Solo mostrar estados con cursos
 
-    // 6. Distribución por instructor
+  // 5. Distribución por instructor
     const byInstructorMap = new Map<string, { instructor: string; courses: number; totalValue: number; paidCourses: number; billedCourses: number; plannedCourses: number }>();
     yearCourses.forEach(course => {
       const instName = (instructors.find(i => i.id === course.instructorId)?.name) || 'Instructor';
@@ -208,12 +192,11 @@ const InvoiceAnalytics: React.FC = () => {
     setAnalytics({
       monthlyRevenue: monthlyData,
       monthlyCoursesCreated: monthlyCoursesData,
-      statusDistribution,
       topClients,
       coursesStatusDistribution,
       byInstructor
     });
-  }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId]);
+  }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, getYear, getMonthIndex]);
 
   useEffect(() => {
     if (invoices.length > 0 && clients.length > 0 && courses.length > 0) {
@@ -256,18 +239,18 @@ const InvoiceAnalytics: React.FC = () => {
   };
 
   const getTotalInvoices = () => {
-    const yearInvoicesAll = invoices.filter(inv => new Date(inv.invoiceDate).getFullYear() === selectedYear);
+  const yearInvoicesAll = invoices.filter(inv => getYear(inv.invoiceDate) === selectedYear);
     if (selectedInstructorId === 'all') return yearInvoicesAll.length;
-    const yearCoursesAll = courses.filter(course => new Date(course.startDate).getFullYear() === selectedYear);
+  const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
     const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
     return yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id))).length;
   };
 
   const getUniqueClients = () => {
-    const yearInvoicesAll = invoices.filter(inv => new Date(inv.invoiceDate).getFullYear() === selectedYear);
+  const yearInvoicesAll = invoices.filter(inv => getYear(inv.invoiceDate) === selectedYear);
     if (selectedInstructorId === 'all') return new Set(yearInvoicesAll.map(inv => inv.clientId)).size;
-    const yearCoursesAll = courses.filter(course => new Date(course.startDate).getFullYear() === selectedYear);
+  const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
     const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
     const filteredInv = yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id)));
@@ -275,14 +258,14 @@ const InvoiceAnalytics: React.FC = () => {
   };
 
   const getTotalCourses = () => {
-    const yearCoursesAll = courses.filter(course => new Date(course.startDate).getFullYear() === selectedYear);
+  const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
     if (selectedInstructorId === 'all') return yearCoursesAll.length;
     return yearCoursesAll.filter(c => c.instructorId === selectedInstructorId).length;
   };
 
   const getExpectedBillingTotal = () => {
     const filtered = courses
-      .filter(course => new Date(course.startDate).getFullYear() === selectedYear)
+      .filter(course => getYear(course.startDate) === selectedYear)
       .filter(course => (selectedInstructorId === 'all') || course.instructorId === selectedInstructorId)
       .filter(course => course.status === 'creado' || course.status === 'dictado');
     return filtered.reduce((sum, course) => sum + course.totalValue, 0);
@@ -407,8 +390,8 @@ const InvoiceAnalytics: React.FC = () => {
         </div>
       </div>
 
-      {/* Gráficos Principales */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  {/* Gráficos Principales */}
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
       {/* Por Instructor */}
       <div className="bg-white shadow-md rounded-lg p-6">
@@ -504,66 +487,28 @@ const InvoiceAnalytics: React.FC = () => {
           </div>
         </div>
 
-        {/* Cursos Creados por Mes */}
+        {/* Valor Económico de Cursos por Mes */}
         <div className="bg-white shadow-md rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Cursos Creados por Mes {selectedYear}</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Valor de Cursos por Mes {selectedYear}</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={analytics.monthlyCoursesCreated}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis yAxisId="courses" orientation="left" tickFormatter={(v)=>formatNumber(Number(v))} />
-              <YAxis yAxisId="value" orientation="right" tickFormatter={(value) => `$${value.toLocaleString()}`} />
-              <Tooltip formatter={(value, name) => {
-                if (name === 'courses') {
-                  return [formatNumber(Number(value)), 'Cursos'];
-                }
-                return [formatCurrency(Number(value)), 'Valor Total'];
-              }} />
-              <Legend 
-                formatter={(value) => {
-                  return value === 'courses' ? 'Número de Cursos' : 'Valor Total';
-                }}
-              />
-              <Bar yAxisId="courses" dataKey="courses" fill="#8B5CF6" />
-              <Bar yAxisId="value" dataKey="totalValue" fill="#F59E0B" />
+              <YAxis tickFormatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} />
+              <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Valor Total']} />
+              <Legend formatter={() => 'Valor Total'} />
+              <Bar dataKey="totalValue" fill="#F59E0B" />
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
-
-      {/* Estados y Análisis */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Estados de Facturas por Valor */}
-        <div className="bg-white shadow-md rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Distribución de Facturación por Estado</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={analytics.statusDistribution}
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-                label={({ name, value }) => `${name}: ${formatCurrency(value)}`}
-              >
-                {analytics.statusDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Valor']} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Estados de Cursos */}
+        {/* Estado de Cursos por Valor (reubicado junto al valor de cursos) */}
         <div className="bg-white shadow-md rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Estado de Cursos por Valor {selectedYear}</h3>
           <div className="space-y-3 mb-4">
-    {analytics.coursesStatusDistribution.map((status, index) => (
+            {analytics.coursesStatusDistribution.map((status, index) => (
               <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center">
-      <div className={`w-4 h-4 rounded-full mr-3 ${status.colorClass}`}></div>
+                  <div className={`w-4 h-4 rounded-full mr-3 ${status.colorClass}`}></div>
                   <div>
                     <p className="font-medium text-gray-900">{status.name}</p>
                     <p className="text-sm text-gray-600">{formatNumber(status.count)} curso(s)</p>
@@ -572,11 +517,12 @@ const InvoiceAnalytics: React.FC = () => {
                 <p className="font-bold text-gray-900">{formatCurrency(status.value)}</p>
               </div>
             ))}
+            {analytics.coursesStatusDistribution.length === 0 && (
+              <p className="text-sm text-gray-500">Sin datos de cursos para el año seleccionado.</p>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Top Clientes con Segmentación por Estado */}
       <div className="bg-white shadow-md rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Clientes {selectedYear} - Segmentación por Estado</h3>
         <div className="space-y-4">
