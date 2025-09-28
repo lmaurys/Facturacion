@@ -35,6 +35,7 @@ const InvoiceAnalytics: React.FC = () => {
   }, []);
 
   const processAnalytics = React.useCallback(() => {
+    // Helper para formatear mes
     // Cursos del año y filtrado por instructor (si aplica)
     const yearCoursesAll = courses.filter(course => 
       new Date(course.startDate).getFullYear() === selectedYear
@@ -49,24 +50,39 @@ const InvoiceAnalytics: React.FC = () => {
     const yearInvoicesAll = invoices.filter(invoice => 
       new Date(invoice.invoiceDate).getFullYear() === selectedYear
     );
+
+    // Fallback de relación: si una factura no tiene courseIds (factura tradicional), intentar inferir cursos
+    // por invoiceNumber + clientId + año para que aparezca en filtro por instructor si corresponde.
+    const invoiceCoursesFallbackMap = new Map<string, string[]>();
+    yearInvoicesAll.forEach(inv => {
+      if (!inv.courseIds || inv.courseIds.length === 0) {
+        const inferred = yearCoursesAll.filter(c => 
+          c.invoiceNumber === inv.invoiceNumber && c.clientId === inv.clientId
+        ).map(c => c.id);
+        if (inferred.length > 0) {
+          invoiceCoursesFallbackMap.set(inv.id, inferred);
+        }
+      }
+    });
     const yearInvoices = selectedInstructorId === 'all'
       ? yearInvoicesAll
-      : yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id)));
+      : yearInvoicesAll.filter(inv => {
+          const ids = inv.courseIds && inv.courseIds.length > 0
+            ? inv.courseIds
+            : (invoiceCoursesFallbackMap.get(inv.id) || []);
+          return ids.some(id => yearCourseIds.has(id));
+        });
 
     // 1. Ingresos mensuales (pagadas, enviadas y borradores)
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
-      const monthInvoices = yearInvoices.filter(invoice => 
-        new Date(invoice.invoiceDate).getMonth() === i
-      );
-      
+      const monthInvoices = yearInvoices.filter(invoice => new Date(invoice.invoiceDate).getMonth() === i);
       const paidInvoices = monthInvoices.filter(inv => inv.status === 'paid');
-      const sentInvoices = monthInvoices.filter(inv => inv.status === 'sent');
+      const sentOnlyInvoices = monthInvoices.filter(inv => inv.status === 'sent');
       const draftInvoices = monthInvoices.filter(inv => inv.status === 'draft');
-      
       return {
         month: new Date(selectedYear, i, 1).toLocaleDateString('es-ES', { month: 'short' }),
-        paid: paidInvoices.reduce((sum, inv) => sum + inv.total, 0),
-        sent: sentInvoices.reduce((sum, inv) => sum + inv.total, 0),
+        paid: paidInvoices.reduce((sum, inv) => sum + (inv.paidAmount ?? inv.total), 0),
+        sent: sentOnlyInvoices.reduce((sum, inv) => sum + inv.total, 0),
         draft: draftInvoices.reduce((sum, inv) => sum + inv.total, 0),
         invoices: monthInvoices.length
       };
@@ -88,7 +104,7 @@ const InvoiceAnalytics: React.FC = () => {
     const statusTotals = {
       draft: yearInvoices.filter(inv => inv.status === 'draft').reduce((sum, inv) => sum + inv.total, 0),
       sent: yearInvoices.filter(inv => inv.status === 'sent').reduce((sum, inv) => sum + inv.total, 0),
-      paid: yearInvoices.filter(inv => inv.status === 'paid').reduce((sum, inv) => sum + inv.total, 0)
+      paid: yearInvoices.filter(inv => inv.status === 'paid').reduce((sum, inv) => sum + (inv.paidAmount ?? inv.total), 0)
     };
 
     const statusDistribution = [
@@ -101,7 +117,7 @@ const InvoiceAnalytics: React.FC = () => {
     //    y cálculo de facturación esperada (cursos creados + dictados)
     const expectedBillingByClient = new Map<string, number>();
     yearCourses
-      .filter(c => c.status === 'creado' || c.status === 'dictado')
+      .filter(c => (c.status === 'creado' || c.status === 'dictado'))
       .forEach(course => {
         const current = expectedBillingByClient.get(course.clientId) || 0;
         expectedBillingByClient.set(course.clientId, current + course.totalValue);
@@ -122,7 +138,7 @@ const InvoiceAnalytics: React.FC = () => {
       
         if (clientTotals.has(invoice.clientId)) {
         const current = clientTotals.get(invoice.clientId)!;
-        current.total += invoice.total;
+  current.total += invoice.total;
         current.invoices += 1;
         
         // Agregar al estado correspondiente
@@ -131,7 +147,7 @@ const InvoiceAnalytics: React.FC = () => {
         } else if (invoice.status === 'sent') {
           current.sent += invoice.total;
         } else if (invoice.status === 'paid') {
-          current.paid += invoice.total;
+          current.paid += (invoice.paidAmount ?? invoice.total);
         }
         } else {
         clientTotals.set(invoice.clientId, {
@@ -140,7 +156,7 @@ const InvoiceAnalytics: React.FC = () => {
           name: clientName,
           draft: invoice.status === 'draft' ? invoice.total : 0,
           sent: invoice.status === 'sent' ? invoice.total : 0,
-            paid: invoice.status === 'paid' ? invoice.total : 0,
+            paid: invoice.status === 'paid' ? (invoice.paidAmount ?? invoice.total) : 0,
             expectedBilling: expectedBillingByClient.get(invoice.clientId) || 0
         });
       }
@@ -228,6 +244,10 @@ const InvoiceAnalytics: React.FC = () => {
       style: 'currency',
       currency: 'USD'
     }).format(amount);
+  };
+
+  const formatNumber = (value: number) => {
+    return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(value);
   };
 
   const getPaidRevenue = () => {
@@ -349,7 +369,7 @@ const InvoiceAnalytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm">Total Facturas</p>
-                <p className="text-2xl font-bold">{getTotalInvoices()}</p>
+                <p className="text-2xl font-bold">{formatNumber(getTotalInvoices())}</p>
               </div>
               <FileText size={32} className="text-blue-200" />
             </div>
@@ -359,7 +379,7 @@ const InvoiceAnalytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-100 text-sm">Clientes Activos</p>
-                <p className="text-2xl font-bold">{getUniqueClients()}</p>
+                <p className="text-2xl font-bold">{formatNumber(getUniqueClients())}</p>
               </div>
               <Users size={32} className="text-purple-200" />
             </div>
@@ -369,7 +389,7 @@ const InvoiceAnalytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-orange-100 text-sm">Total Cursos</p>
-                <p className="text-2xl font-bold">{getTotalCourses()}</p>
+                <p className="text-2xl font-bold">{formatNumber(getTotalCourses())}</p>
               </div>
               <Calendar size={32} className="text-orange-200" />
             </div>
@@ -409,11 +429,11 @@ const InvoiceAnalytics: React.FC = () => {
               {analytics.byInstructor.map((row) => (
                 <tr key={row.instructor}>
                   <td className="px-3 py-2 text-sm text-gray-900">{row.instructor}</td>
-                  <td className="px-3 py-2 text-sm text-right">{row.courses}</td>
+                  <td className="px-3 py-2 text-sm text-right">{formatNumber(row.courses)}</td>
                   <td className="px-3 py-2 text-sm text-right">{formatCurrency(row.totalValue)}</td>
-                  <td className="px-3 py-2 text-sm text-right">{row.paidCourses}</td>
-                  <td className="px-3 py-2 text-sm text-right">{row.billedCourses}</td>
-                  <td className="px-3 py-2 text-sm text-right">{row.plannedCourses}</td>
+                  <td className="px-3 py-2 text-sm text-right">{formatNumber(row.paidCourses)}</td>
+                  <td className="px-3 py-2 text-sm text-right">{formatNumber(row.billedCourses)}</td>
+                  <td className="px-3 py-2 text-sm text-right">{formatNumber(row.plannedCourses)}</td>
                 </tr>
               ))}
               {analytics.byInstructor.length === 0 && (
@@ -432,7 +452,7 @@ const InvoiceAnalytics: React.FC = () => {
             <BarChart data={analytics.monthlyRevenue}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis tickFormatter={(value) => `$${value.toLocaleString()}`} />
+              <YAxis tickFormatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} />
               <Tooltip formatter={(value, name) => {
                 const nameMap: Record<string, string> = {
                   'paid': 'Pagadas',
@@ -456,6 +476,32 @@ const InvoiceAnalytics: React.FC = () => {
               <Bar dataKey="draft" stackId="a" fill="#9CA3AF" />
             </BarChart>
           </ResponsiveContainer>
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            {(() => {
+              const totals = analytics.monthlyRevenue.reduce((acc, m) => {
+                acc.paid += m.paid;
+                acc.sent += m.sent;
+                acc.draft += m.draft;
+                return acc;
+              }, { paid: 0, sent: 0, draft: 0 });
+              return (
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded p-3">
+                    <div className="text-green-700 font-medium">Total Pagadas</div>
+                    <div className="text-green-800 font-bold">{formatCurrency(totals.paid)}</div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                    <div className="text-blue-700 font-medium">Total Enviadas</div>
+                    <div className="text-blue-800 font-bold">{formatCurrency(totals.sent)}</div>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                    <div className="text-gray-700 font-medium">Total Borradores</div>
+                    <div className="text-gray-800 font-bold">{formatCurrency(totals.draft)}</div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
 
         {/* Cursos Creados por Mes */}
@@ -465,11 +511,11 @@ const InvoiceAnalytics: React.FC = () => {
             <BarChart data={analytics.monthlyCoursesCreated}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis yAxisId="courses" orientation="left" />
+              <YAxis yAxisId="courses" orientation="left" tickFormatter={(v)=>formatNumber(Number(v))} />
               <YAxis yAxisId="value" orientation="right" tickFormatter={(value) => `$${value.toLocaleString()}`} />
               <Tooltip formatter={(value, name) => {
                 if (name === 'courses') {
-                  return [value, 'Cursos'];
+                  return [formatNumber(Number(value)), 'Cursos'];
                 }
                 return [formatCurrency(Number(value)), 'Valor Total'];
               }} />
@@ -520,7 +566,7 @@ const InvoiceAnalytics: React.FC = () => {
       <div className={`w-4 h-4 rounded-full mr-3 ${status.colorClass}`}></div>
                   <div>
                     <p className="font-medium text-gray-900">{status.name}</p>
-                    <p className="text-sm text-gray-600">{status.count} curso(s)</p>
+                    <p className="text-sm text-gray-600">{formatNumber(status.count)} curso(s)</p>
                   </div>
                 </div>
                 <p className="font-bold text-gray-900">{formatCurrency(status.value)}</p>
@@ -540,7 +586,7 @@ const InvoiceAnalytics: React.FC = () => {
                 <div className="flex-1">
                   <h4 className="font-semibold text-gray-900 text-lg">{client.name}</h4>
                   <div className="flex items-center space-x-4 text-sm text-gray-600">
-                    <span>{client.invoices} factura(s)</span>
+                    <span>{formatNumber(client.invoices)} factura(s)</span>
                     <span className="font-bold text-xl text-gray-900">{formatCurrency(client.total)}</span>
                   </div>
             {client.expectedBilling > 0 && (
@@ -559,21 +605,21 @@ const InvoiceAnalytics: React.FC = () => {
                     <div className="bg-green-50 p-2 rounded text-center">
                       <div className="font-medium text-green-800">Pagadas</div>
                       <div className="text-green-600">{formatCurrency(client.paid)}</div>
-                      <div className="text-green-500">{getStatusPercentage(client.paid, client.total).toFixed(1)}%</div>
+                      <div className="text-green-500">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(getStatusPercentage(client.paid, client.total))}%</div>
                     </div>
                   )}
                   {client.sent > 0 && (
                     <div className="bg-blue-50 p-2 rounded text-center">
                       <div className="font-medium text-blue-800">Enviadas</div>
                       <div className="text-blue-600">{formatCurrency(client.sent)}</div>
-                      <div className="text-blue-500">{getStatusPercentage(client.sent, client.total).toFixed(1)}%</div>
+                      <div className="text-blue-500">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(getStatusPercentage(client.sent, client.total))}%</div>
                     </div>
                   )}
                   {client.draft > 0 && (
                     <div className="bg-gray-50 p-2 rounded text-center">
                       <div className="font-medium text-gray-800">Borradores</div>
                       <div className="text-gray-600">{formatCurrency(client.draft)}</div>
-                      <div className="text-gray-500">{getStatusPercentage(client.draft, client.total).toFixed(1)}%</div>
+                      <div className="text-gray-500">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(getStatusPercentage(client.draft, client.total))}%</div>
                     </div>
                   )}
                 </div>
