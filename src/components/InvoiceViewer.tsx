@@ -166,15 +166,26 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Render course items first, visually distinct */}
                     {courses.map((course, index) => (
-                      <tr key={course.id} className="border-t border-gray-300">
-                        <td className="px-2 py-1">{index + 1}</td>
-                        <td className="px-2 py-1">{`${course.courseName} (${course.startDate} - ${course.endDate})`}</td>
-                        <td className="px-2 py-1 text-right">{formatHours(course.hours)}</td>
-                        <td className="px-2 py-1 text-right">{formatCurrency(course.hourlyRate)}</td>
-                        <td className="px-2 py-1 text-right">{formatCurrency(course.totalValue)}</td>
+                      <tr key={`course-${course.id}`} className="border-t border-gray-300 bg-blue-50">
+                        <td className="px-2 py-1 font-semibold">{index + 1}</td>
+                        <td className="px-2 py-1 font-semibold">{`${course.courseName} (${course.startDate} - ${course.endDate})`}</td>
+                        <td className="px-2 py-1 text-right font-semibold">{formatHours(course.hours)}</td>
+                        <td className="px-2 py-1 text-right font-semibold">{formatCurrency(course.hourlyRate)}</td>
+                        <td className="px-2 py-1 text-right font-semibold">{formatCurrency(course.totalValue)}</td>
                       </tr>
                     ))}
+                    {/* Render custom items after courses, visually distinct */}
+                    {(invoice.items?.map((item, idx) => (
+                      <tr key={`custom-${idx}`} className="border-t border-gray-300 bg-yellow-50">
+                        <td className="px-2 py-1">{courses.length + idx + 1}</td>
+                        <td className="px-2 py-1">{item.description}</td>
+                        <td className="px-2 py-1 text-right">{item.quantity}</td>
+                        <td className="px-2 py-1 text-right">{formatCurrency(item.unitPrice)}</td>
+                        <td className="px-2 py-1 text-right">{formatCurrency(item.quantity * item.unitPrice)}</td>
+                      </tr>
+                    )) || [])}
                   </tbody>
                 </table>
               </div>

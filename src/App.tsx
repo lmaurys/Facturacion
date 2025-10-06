@@ -38,6 +38,9 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  // Vinculación cuando la factura se generó desde cursos
+  const [linkedInvoiceId, setLinkedInvoiceId] = useState<string>('');
+  const [linkedCourseIds, setLinkedCourseIds] = useState<string[]>([]);
 
   const visibleInvoiceRef = useRef<HTMLDivElement>(null);
   const hiddenInvoiceRef = useRef<HTMLDivElement>(null);
@@ -176,6 +179,8 @@ const App: React.FC = () => {
         transferOption: selectedTransfer,
       });
       setInvoiceNumber('');
+      setLinkedInvoiceId('');
+      setLinkedCourseIds([]);
     }
   };
 
@@ -195,13 +200,18 @@ const App: React.FC = () => {
       total: total,
       status: 'draft',
       transferOption: selectedTransfer,
-      observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`
+      observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`,
+      items: [] // Solo ítems manuales después
     };
 
     try {
       const savedInvoice = await addInvoice(invoiceData);
       if (savedInvoice) {
         console.log('Factura guardada exitosamente:', savedInvoice);
+        // Vincular para posteriores actualizaciones desde el formulario tradicional
+        setLinkedInvoiceId(savedInvoice.id);
+        setLinkedCourseIds(savedInvoice.courseIds);
+        setInvoiceNumber(savedInvoice.invoiceNumber);
       }
     } catch (error) {
       console.error('Error guardando factura:', error);
@@ -234,42 +244,86 @@ const App: React.FC = () => {
       // Buscar el cliente por nombre (si existe) o crear uno temporal
       const clients = await loadClients();
       let clientId = '';
-      
       const existingClient = clients.find(c => c.name === invoice.clientName);
       if (existingClient) {
         clientId = existingClient.id;
       } else {
-        // El cliente no existe, crear uno temporal
         clientId = `temp_client_${Date.now()}`;
       }
+      // Reusar vínculo de factura generada desde cursos si existe
+      const hasCourseIds = linkedCourseIds.length > 0;
+      const existingInvoiceNumber = invoiceNumber || '';
+      const existingInvoiceId = linkedInvoiceId || '';
 
-      // Generar número de factura automáticamente si está vacío
-      let finalInvoiceNumber = invoiceNumber;
+      let finalInvoiceNumber = existingInvoiceNumber;
       if (!finalInvoiceNumber) {
         const { getNextInvoiceNumber } = await import('./utils/storage');
         finalInvoiceNumber = await getNextInvoiceNumber();
         setInvoiceNumber(finalInvoiceNumber);
       }
 
+      const courseIds = hasCourseIds ? linkedCourseIds : [];
+
+      // Filtrar ítems manuales: excluir los ítems que correspondan a cursos
+      let manualItems = invoice.items;
+      if (courseIds.length > 0) {
+        // Obtener descripciones de cursos
+        const { loadCourses } = await import('./utils/storage');
+        const allCourses = await loadCourses();
+        const courseDescriptions = allCourses
+          .filter(c => courseIds.includes(c.id))
+          .map(c => `${c.courseName} (${c.startDate} - ${c.endDate})`);
+        manualItems = invoice.items.filter(item => !courseDescriptions.includes(item.description));
+      }
       const invoiceData: Omit<InvoiceFromCourse, 'id'> = {
-        clientId: clientId,
-        courseIds: [], // No hay cursos asociados para facturas tradicionales
+        clientId,
+        courseIds,
         invoiceNumber: finalInvoiceNumber,
         invoiceDate: new Date().toISOString().split('T')[0],
         issuer: selectedIssuer,
-        language: language,
-        paymentTerms: paymentTerms,
+        language,
+        paymentTerms,
         subtotal: invoice.total,
         total: invoice.total,
         status: 'draft',
         transferOption: selectedTransfer,
-        observations: `Factura tradicional - Cliente: ${invoice.clientName}, NIT: ${invoice.clientNIT}`
+        observations: courseIds.length > 0
+          ? `Factura generada desde cursos: ${invoice.items.map(item => item.description).join(', ')}`
+          : `Factura tradicional - Cliente: ${invoice.clientName}, NIT: ${invoice.clientNIT}`,
+        items: manualItems
       };
 
+      // Buscar primero por id, luego por invoiceNumber
+      const { updateInvoice, loadInvoices } = await import('./utils/storage');
+      const allInvoices = await loadInvoices();
+      let existing = undefined as InvoiceFromCourse | undefined;
+      if (existingInvoiceId) {
+        existing = allInvoices.find(inv => inv.id === existingInvoiceId);
+      }
+      if (!existing && finalInvoiceNumber) {
+        existing = allInvoices.find(inv => inv.invoiceNumber === finalInvoiceNumber);
+      }
+
+      if (existing) {
+        const updated = await updateInvoice(existing.id, invoiceData);
+        if (updated) {
+          alert(`¡Factura actualizada exitosamente!\nNúmero de factura: ${finalInvoiceNumber}`);
+          console.log('Factura actualizada:', updated);
+          // Mantener vínculo tras la actualización
+          setLinkedInvoiceId(updated.id);
+          setLinkedCourseIds(updated.courseIds);
+          return;
+        }
+      }
+
+      // Si no existe, crear nueva factura
       const savedInvoice = await addInvoice(invoiceData);
       if (savedInvoice) {
         alert(`¡Factura guardada exitosamente!\nNúmero de factura: ${finalInvoiceNumber}`);
         console.log('Factura guardada:', savedInvoice);
+        // Vincular si fue creada como tradicional (sin cursos), limpiar vínculo previo
+        setLinkedInvoiceId('');
+        setLinkedCourseIds([]);
       } else {
         alert('Error al guardar la factura. Intenta nuevamente.');
       }
@@ -279,27 +333,25 @@ const App: React.FC = () => {
     }
   };
 
+  // Render de contenido principal según el modo
   const renderContent = () => {
     if (currentMode === 'courses') {
       return <CourseManagement />;
     }
-    
     if (currentMode === 'clients') {
       return <ClientManagement />;
     }
-
     if (currentMode === 'invoices') {
       return <InvoiceManagement />;
     }
-
     if (currentMode === 'analytics') {
       return <InvoiceAnalytics />;
     }
-
     if (currentMode === 'data') {
-  return <DataManagement />;
+      return <DataManagement />;
     }
 
+    // Modo de facturación (por defecto)
     return (
       <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -353,6 +405,7 @@ const App: React.FC = () => {
                 </button>
               </div>
             </div>
+
             {/* Contenedor offscreen para PDF/impresión en pantallas pequeñas */}
             <div className="block lg:hidden">
               <div ref={hiddenInvoiceRef} className="fixed -left-[10000px] -top-[10000px] w-[794px] bg-white p-4">

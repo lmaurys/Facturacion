@@ -1,4 +1,4 @@
-import { Course, Client, InvoiceFromCourse, Blackout, Instructor } from '../types';
+import { Course, Client, InvoiceFromCourse, Blackout, Instructor, Item } from '../types';
 import { loadDataFromAzure, saveDataToAzure } from './azureBlobSync';
 
 // Azure como única fuente de verdad
@@ -22,7 +22,9 @@ let localDataCache: {
 
 // Eventos para notificar a la UI
 const dispatchSyncEvent = (type: 'start' | 'success' | 'error') => {
-  window.dispatchEvent(new CustomEvent(`azureSync${type.charAt(0).toUpperCase() + type.slice(1)}`));
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent(`azureSync${type.charAt(0).toUpperCase() + type.slice(1)}`));
+    }
 };
 
 // Función para forzar el guardado inmediato
@@ -245,6 +247,26 @@ const removeDuplicateInvoices = (invoices: InvoiceFromCourse[]): InvoiceFromCour
   return uniqueInvoices;
 };
 
+const normalizeInvoiceItem = (item: Item): Item => {
+  return {
+    description: item.description?.trim() ?? '',
+    quantity: typeof item.quantity === 'number' ? item.quantity : Number(item.quantity) || 0,
+    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice) || 0
+  };
+};
+
+const normalizeInvoiceRecord = (invoice: InvoiceFromCourse): InvoiceFromCourse => {
+  const normalizedItems = Array.isArray(invoice.items)
+    ? invoice.items.map(normalizeInvoiceItem)
+    : [];
+
+  return {
+    ...invoice,
+    courseIds: Array.isArray(invoice.courseIds) ? invoice.courseIds : [],
+    items: normalizedItems
+  };
+};
+
 // Cargar datos iniciales desde Azure
 export const initializeFromAzure = async (): Promise<boolean> => {
   try {
@@ -303,14 +325,15 @@ export const initializeFromAzure = async (): Promise<boolean> => {
   const uniqueCoursesRaw = removeDuplicateCourses(remoteCourses || []);
   console.log('📍 PASO 3B: Cursos después de limpieza:', uniqueCoursesRaw.length);
       
-      const remoteInvoices = (azureData.invoices || []) as unknown as InvoiceFromCourse[];
-      const uniqueInvoices = removeDuplicateInvoices(remoteInvoices || []);
-      console.log('📍 PASO 3C: Facturas después de limpieza:', uniqueInvoices.length);
+  const remoteInvoices = (azureData.invoices || []) as unknown as InvoiceFromCourse[];
+  const uniqueInvoicesRaw = removeDuplicateInvoices(remoteInvoices || []);
+  const normalizedInvoices = uniqueInvoicesRaw.map(normalizeInvoiceRecord);
+  console.log('📍 PASO 3C: Facturas después de limpieza:', normalizedInvoices.length);
       
       console.log('📊 DATOS DESPUÉS DE LIMPIAR DUPLICADOS:', {
         courses: uniqueCoursesRaw.length,
         clients: uniqueClients.length,
-        invoices: uniqueInvoices.length
+  invoices: normalizedInvoices.length
       });
       
       console.log('📍 PASO 4: Actualizando cache local');
@@ -331,7 +354,7 @@ export const initializeFromAzure = async (): Promise<boolean> => {
       localDataCache = {
         courses: coursesWithInstructor,
         clients: uniqueClients,
-        invoices: uniqueInvoices,
+  invoices: normalizedInvoices,
         instructors,
         blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
         lastUpdate: azureData.exportDate || new Date().toISOString(),
@@ -408,7 +431,7 @@ export const emergencyLoadFromAzure = async (): Promise<boolean> => {
         instructorId: c.instructorId || 'default_instructor'
       }));
       const clients = (azureData.clients || []) as unknown as Client[];
-      const invoices = (azureData.invoices || []) as unknown as InvoiceFromCourse[];
+  const invoices = ((azureData.invoices || []) as unknown as InvoiceFromCourse[]).map(normalizeInvoiceRecord);
       let instructors = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
       if (!instructors.find(i => i.id === 'default_instructor')) {
         instructors = [{ id: 'default_instructor', name: 'Luis Maury', active: true }, ...instructors];
@@ -485,7 +508,7 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
       localDataCache = {
         courses: coursesBackfilled,
         clients: (azureData.clients || []) as unknown as Client[],
-        invoices: (azureData.invoices || []) as unknown as InvoiceFromCourse[],
+  invoices: ((azureData.invoices || []) as unknown as InvoiceFromCourse[]).map(normalizeInvoiceRecord),
         instructors,
         blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
         lastUpdate: azureData.exportDate || new Date().toISOString(),
@@ -895,14 +918,14 @@ export const addInvoice = async (invoiceData: Omit<InvoiceFromCourse, 'id'>): Pr
       await initializeFromAzure();
     }
     
-    const newInvoice: InvoiceFromCourse = {
+    const newInvoice: InvoiceFromCourse = normalizeInvoiceRecord({
       ...invoiceData,
       id: generateInvoiceId()
-    };
+    });
     
     console.log('🆕 Nueva factura creada:', newInvoice.id);
     
-    localDataCache.invoices.push(newInvoice);
+  localDataCache.invoices.push(newInvoice);
     
     console.log('📈 Facturas después de agregar:', localDataCache.invoices.length);
     
@@ -916,7 +939,7 @@ export const addInvoice = async (invoiceData: Omit<InvoiceFromCourse, 'id'>): Pr
       console.log('❌ Error guardando factura, pero manteniéndola en cache local');
     }
     
-    return newInvoice;
+  return newInvoice;
   } catch (error) {
     console.error('❌ Error adding invoice:', error);
     return null;
@@ -949,11 +972,11 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
       nuevo: invoiceData.issuer
     });
     
-    const updatedInvoice: InvoiceFromCourse = {
+    const updatedInvoice: InvoiceFromCourse = normalizeInvoiceRecord({
       ...localDataCache.invoices[invoiceIndex],
       ...invoiceData,
       id: invoiceId
-    };
+    });
     
     console.log('✏️ Factura actualizada a guardar:', updatedInvoice);
     console.log('🔍 Verificando emisor en factura actualizada:', updatedInvoice.issuer);

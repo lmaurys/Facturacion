@@ -62,6 +62,7 @@ export interface InvoiceFromCourse {
   observations?: string;
   paymentDate?: string; // Fecha en que se pagó la factura
   paidAmount?: number;  // Valor pagado de la factura
+  items?: Item[];       // Items adicionales no asociados a cursos
 }
 
 export type Issuer = 'colombia' | 'usa';
