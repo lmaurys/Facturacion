@@ -169,37 +169,26 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
   };
 
   const handleDeleteCourse = (course: Course) => {
-    const isInvoiced = course.status === 'facturado' || course.status === 'pagado';
-    
-    if (isInvoiced) {
-      // Confirmación especial para cursos facturados
-      const confirmMessage = `⚠️ ATENCIÓN: Eliminar Curso Facturado
+    if (course.status !== 'creado') {
+      // Solo se pueden eliminar cursos en estado "creado"
+      const statusName = getStatusText(course.status);
+      alert(`⚠️ ERROR: Solo se pueden eliminar cursos en estado "Creado".
 
 Curso: ${course.courseName}
 Cliente: ${getClientName(course.clientId)}
-Estado: ${getStatusText(course.status)}
-${course.invoiceNumber ? `Número de Factura: ${course.invoiceNumber}` : ''}
+Estado actual: ${statusName}
 Valor: ${formatCurrency(course.totalValue)}
 
-🚨 ADVERTENCIA: Este curso ya ha sido facturado${course.status === 'pagado' ? ' y pagado' : ''}. 
-Al eliminarlo podrías:
-• Perder el historial de facturación
-• Crear inconsistencias en los registros
-• Afectar reportes financieros
+Este curso está en estado "${statusName}" y no puede ser eliminado.
+Solo los cursos que no han sido dictados, facturados o pagados pueden eliminarse.
 
-¿Estás COMPLETAMENTE SEGURO de que quieres eliminar este curso?
-
-Escribe "CONFIRMAR" para proceder:`;
-      
-      const userInput = prompt(confirmMessage);
-      if (userInput === 'CONFIRMAR') {
-        onDelete(course.id);
-      }
-    } else {
-      // Confirmación normal para cursos no facturados
-      if (window.confirm(`¿Estás seguro de que quieres eliminar el curso "${course.courseName}"?`)) {
-        onDelete(course.id);
-      }
+Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
+      return;
+    }
+    
+    // Confirmación para cursos en estado "creado"
+    if (window.confirm(`¿Estás seguro de que quieres eliminar el curso "${course.courseName}"?`)) {
+      onDelete(course.id);
     }
   };
 
@@ -356,14 +345,15 @@ Escribe "CONFIRMAR" para proceder:`;
                   </button>
                   <button
                     onClick={() => handleDeleteCourse(course)}
-                    className={`p-1 rounded ${
-                      course.status === 'facturado' || course.status === 'pagado'
-                        ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                    disabled={course.status !== 'creado'}
+                    className={`p-2 rounded ${
+                      course.status !== 'creado'
+                        ? 'text-gray-300 cursor-not-allowed'
                         : 'text-red-600 hover:text-red-900 hover:bg-red-50'
                     }`}
                     title={
-                      course.status === 'facturado' || course.status === 'pagado'
-                        ? 'Eliminar curso facturado (requiere confirmación especial)'
+                      course.status !== 'creado'
+                        ? 'Solo se pueden eliminar cursos en estado "Creado"'
                         : 'Eliminar curso'
                     }
                   >
@@ -542,13 +532,16 @@ Escribe "CONFIRMAR" para proceder:`;
                       </button>
                       <button
                         onClick={() => handleDeleteCourse(course)}
+                        disabled={course.status !== 'creado'}
                         className={`p-1 rounded ${
-                          course.status === 'facturado' || course.status === 'pagado'
-                            ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                          course.status !== 'creado'
+                            ? 'text-gray-300 cursor-not-allowed'
                             : 'text-red-600 hover:text-red-900 hover:bg-red-50'
                         }`}
                         title={
-                          course.status === 'facturado' || course.status === 'pagado'
+                          course.status !== 'creado'
+                            ? 'Solo se pueden eliminar cursos en estado "Creado"'
+                            : course.status === 'facturado'
                             ? 'Eliminar curso facturado (requiere confirmación especial)'
                             : 'Eliminar curso'
                         }

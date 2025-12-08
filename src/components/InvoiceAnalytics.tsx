@@ -18,6 +18,14 @@ interface AnalyticsData {
   }>;
   coursesStatusDistribution: Array<{ name: string; value: number; count: number; colorClass: string }>;
   byInstructor: Array<{ instructor: string; courses: number; totalValue: number; paidCourses: number; billedCourses: number; plannedCourses: number }>;
+  overdueInvoices: Array<{
+    invoiceNumber: string;
+    clientName: string;
+    amount: number;
+    dueDate: string;
+    daysOverdue: number;
+    status: string;
+  }>;
 }
 
 const InvoiceAnalytics: React.FC = () => {
@@ -152,8 +160,7 @@ const InvoiceAnalytics: React.FC = () => {
     });
 
     const topClients = Array.from(clientTotals.values())
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
+      .sort((a, b) => b.total - a.total);
 
   // 4. Distribución de cursos por estado (mejorada)
     const coursesByStatus = {
@@ -189,12 +196,48 @@ const InvoiceAnalytics: React.FC = () => {
     });
     const byInstructor = Array.from(byInstructorMap.values()).sort((a, b) => b.totalValue - a.totalValue);
 
+    // 6. Facturas vencidas (facturas enviadas con fecha de vencimiento pasada)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const overdueInvoices = yearInvoices
+      .filter(invoice => {
+        if (invoice.status === 'paid') return false; // No incluir facturas pagadas
+        
+        // Calcular fecha de vencimiento (fecha factura + términos de pago)
+        const invoiceDate = new Date(invoice.invoiceDate);
+        const dueDate = new Date(invoiceDate);
+        dueDate.setDate(dueDate.getDate() + invoice.paymentTerms);
+        dueDate.setHours(0, 0, 0, 0);
+        
+        return dueDate < today;
+      })
+      .map(invoice => {
+        const client = clients.find(c => c.id === invoice.clientId);
+        const invoiceDate = new Date(invoice.invoiceDate);
+        const dueDate = new Date(invoiceDate);
+        dueDate.setDate(dueDate.getDate() + invoice.paymentTerms);
+        
+        const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        return {
+          invoiceNumber: invoice.invoiceNumber,
+          clientName: client?.name || 'Cliente no encontrado',
+          amount: invoice.total,
+          dueDate: dueDate.toISOString().split('T')[0],
+          daysOverdue,
+          status: invoice.status
+        };
+      })
+      .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
     setAnalytics({
       monthlyRevenue: monthlyData,
       monthlyCoursesCreated: monthlyCoursesData,
       topClients,
       coursesStatusDistribution,
-      byInstructor
+      byInstructor,
+      overdueInvoices
     });
   }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, getYear, getMonthIndex]);
 
@@ -523,8 +566,58 @@ const InvoiceAnalytics: React.FC = () => {
           </div>
         </div>
       </div>
+      {/* Sección de Facturas Vencidas */}
+      {analytics.overdueInvoices.length > 0 && (
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <div className="flex items-center mb-4">
+            <div className="w-3 h-3 bg-red-500 rounded-full mr-2 animate-pulse"></div>
+            <h3 className="text-lg font-semibold text-red-900">Facturas Vencidas ({analytics.overdueInvoices.length})</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-red-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Factura</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Cliente</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Monto</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Fecha Vencimiento</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Días Vencidos</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {analytics.overdueInvoices.map((invoice, index) => (
+                  <tr key={index} className="hover:bg-red-50">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.invoiceNumber}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{invoice.clientName}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(invoice.amount)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{new Date(invoice.dueDate).toLocaleDateString('es-ES')}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                        invoice.daysOverdue > 60 ? 'bg-red-100 text-red-800' :
+                        invoice.daysOverdue > 30 ? 'bg-orange-100 text-orange-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {invoice.daysOverdue} día(s)
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                        invoice.status === 'sent' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {invoice.status === 'sent' ? 'Enviada' : 'Borrador'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white shadow-md rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Clientes {selectedYear} - Segmentación por Estado</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Clientes {selectedYear} - Segmentación por Estado</h3>
         <div className="space-y-4">
           {analytics.topClients.map((client, index) => (
             <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">

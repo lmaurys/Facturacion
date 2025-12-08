@@ -92,6 +92,20 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   };
 
   const handleQuickStatusChange = async (invoice: InvoiceFromCourse, newStatus: 'draft' | 'sent' | 'paid') => {
+    // Si se intenta marcar como pagada, abrir el editor con datos pre-llenados
+    if (newStatus === 'paid') {
+      // Crear una factura con los datos sugeridos para quick-pay
+      const today = new Date().toISOString().split('T')[0];
+      const invoiceWithPresets = {
+        ...invoice,
+        _presetStatus: 'paid' as const,
+        _presetPaymentDate: today,
+        _presetPaidAmount: invoice.total
+      };
+      onEdit(invoiceWithPresets as InvoiceFromCourse);
+      return;
+    }
+
     try {
       const updatedInvoice = await updateInvoice(invoice.id, {
         ...invoice,
@@ -143,41 +157,16 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   };
 
   const handleDeleteInvoice = (invoice: InvoiceFromCourse) => {
-    const isPaid = invoice.status === 'paid';
-    
-    if (isPaid) {
-      // Confirmación especial para facturas pagadas
-      const confirmMessage = `🚨 ATENCIÓN: Eliminar Factura Pagada
-
-Factura: ${invoice.invoiceNumber}
-Cliente: ${getClientName(invoice.clientId)}
-Estado: ${getStatusText(invoice.status)}
-Fecha: ${invoice.invoiceDate}
-Valor: ${formatCurrency(invoice.total)}
-
-⚠️ ADVERTENCIA CRÍTICA: Esta factura ya ha sido PAGADA.
-Al eliminarla podrías:
-• Perder el historial de pagos
-• Crear inconsistencias contables graves
-• Afectar reportes financieros y de ingresos
-• Violar políticas de auditoría
-
-🔒 Esta es una operación de ALTO RIESGO financiero.
-
-¿Estás COMPLETAMENTE SEGURO de que quieres eliminar esta factura pagada?
-
-Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
-      
-      const userInput = prompt(confirmMessage);
-      if (userInput === 'ELIMINAR FACTURA PAGADA') {
-        onDelete(invoice.id);
-      }
-    } else {
-      // Confirmación normal para facturas no pagadas
+    // Solo permitir eliminar facturas en borrador
+    if (invoice.status !== 'draft') {
       const statusText = getStatusText(invoice.status);
-      if (window.confirm(`¿Estás seguro de que quieres eliminar la factura "${invoice.invoiceNumber}" (${statusText})?`)) {
-        onDelete(invoice.id);
-      }
+      alert(`No se puede eliminar una factura en estado "${statusText}". Solo se pueden eliminar facturas en estado "Borrador".`);
+      return;
+    }
+    
+    // Confirmación para facturas en borrador
+    if (window.confirm(`¿Estás seguro de que quieres eliminar la factura "${invoice.invoiceNumber}" (Borrador)?\n\nLos cursos asociados volverán al estado "Dictado".`)) {
+      onDelete(invoice.id);
     }
   };
 
@@ -431,14 +420,15 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
                   </button>
                   <button
                     onClick={() => handleDeleteInvoice(invoice)}
+                    disabled={invoice.status !== 'draft'}
                     className={`p-1 rounded ${
-                      invoice.status === 'paid'
-                        ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                      invoice.status !== 'draft'
+                        ? 'text-gray-400 cursor-not-allowed'
                         : 'text-red-600 hover:text-red-900 hover:bg-red-50'
                     }`}
                     title={
-                      invoice.status === 'paid'
-                        ? 'Eliminar factura pagada (requiere confirmación especial)'
+                      invoice.status !== 'draft'
+                        ? 'Solo se pueden eliminar facturas en estado Borrador'
                         : 'Eliminar factura'
                     }
                   >
@@ -587,14 +577,15 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
                         </button>
                         <button
                           onClick={() => handleDeleteInvoice(invoice)}
+                          disabled={invoice.status !== 'draft'}
                           className={`p-1 rounded ${
-                            invoice.status === 'paid'
-                              ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                            invoice.status !== 'draft'
+                              ? 'text-gray-400 cursor-not-allowed'
                               : 'text-red-600 hover:text-red-900 hover:bg-red-50'
                           }`}
                           title={
-                            invoice.status === 'paid'
-                              ? 'Eliminar factura pagada (requiere confirmación especial)'
+                            invoice.status !== 'draft'
+                              ? 'Solo se pueden eliminar facturas en estado Borrador'
                               : 'Eliminar factura'
                           }
                         >

@@ -3,7 +3,7 @@ import InvoiceList from './InvoiceList';
 import InvoiceViewer from './InvoiceViewer';
 import InvoiceEditor from './InvoiceEditor';
 import { InvoiceFromCourse, Client, Course } from '../types';
-import { loadInvoices, deleteInvoice, loadClients, loadCourses } from '../utils/storage';
+import { loadInvoices, deleteInvoice, loadClients, loadCourses, updateCourse } from '../utils/storage';
 
 const InvoiceManagement: React.FC = () => {
   const [invoices, setInvoices] = useState<InvoiceFromCourse[]>([]);
@@ -55,43 +55,29 @@ const InvoiceManagement: React.FC = () => {
       return;
     }
     
-    const isPaid = invoice.status === 'paid';
+    // Solo permitir eliminar facturas en borrador
+    if (invoice.status !== 'draft') {
+      const statusText = invoice.status === 'sent' ? 'Enviada' : invoice.status === 'paid' ? 'Pagada' : invoice.status;
+      alert(`No se puede eliminar una factura en estado "${statusText}". Solo se pueden eliminar facturas en estado "Borrador".`);
+      return;
+    }
     
-    if (isPaid) {
-      // Confirmación especial para facturas pagadas
-      const confirmMessage = `🚨 ATENCIÓN: Eliminar Factura Pagada
-
-Factura: ${invoice.invoiceNumber}
-Estado: Pagada
-Fecha: ${invoice.invoiceDate}
-Valor: ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'USD' }).format(invoice.total)}
-
-⚠️ ADVERTENCIA CRÍTICA: Esta factura ya ha sido PAGADA.
-Al eliminarla podrías:
-• Perder el historial de pagos
-• Crear inconsistencias contables graves
-• Afectar reportes financieros y de ingresos
-• Violar políticas de auditoría
-
-🔒 Esta es una operación de ALTO RIESGO financiero.
-
-¿Estás COMPLETAMENTE SEGURO de que quieres eliminar esta factura pagada?
-
-Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
-      
-      const userInput = prompt(confirmMessage);
-      if (userInput !== 'ELIMINAR FACTURA PAGADA') {
-        return; // Usuario canceló o no escribió la confirmación correcta
-      }
-    } else {
-      // Confirmación normal para facturas no pagadas
-      const statusText = invoice.status === 'sent' ? 'Enviada' : 'Borrador';
-      if (!window.confirm(`¿Estás seguro de que quieres eliminar la factura "${invoice.invoiceNumber}" (${statusText})?`)) {
-        return;
-      }
+    // Confirmación para facturas en borrador
+    if (!window.confirm(`¿Estás seguro de que quieres eliminar la factura "${invoice.invoiceNumber}" (Borrador)?`)) {
+      return;
     }
     
     try {
+      // Antes de eliminar, revertir los cursos asociados a estado "dictado"
+      const relatedCourses = courses.filter(course => invoice.courseIds.includes(course.id));
+      
+      for (const course of relatedCourses) {
+        await updateCourse(course.id, {
+          ...course,
+          status: 'dictado'
+        });
+      }
+      
       await deleteInvoice(id);
       await loadAllData(); // Recargar la lista
     } catch (error) {
@@ -166,6 +152,9 @@ Escribe "ELIMINAR FACTURA PAGADA" para proceder:`;
           invoice={editingInvoice}
           onSave={handleSaveEdit}
           onCancel={handleCloseModals}
+          presetStatus={(editingInvoice as any)._presetStatus}
+          presetPaymentDate={(editingInvoice as any)._presetPaymentDate}
+          presetPaidAmount={(editingInvoice as any)._presetPaidAmount}
         />
       )}
     </div>

@@ -455,7 +455,7 @@ const App: React.FC = () => {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <h1 className="text-xl font-bold text-gray-900">
-                Sistema de Gestión Profesional
+                Sistema de Gestión de Facturas
               </h1>
             </div>
             {/* Botón menú móvil */}

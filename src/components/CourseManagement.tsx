@@ -84,6 +84,22 @@ const CourseManagement: React.FC = () => {
   };
 
   const handleDeleteCourse = async (courseId: string) => {
+    // Verificar el estado del curso
+    const course = courses.find(c => c.id === courseId);
+    if (course && course.status !== 'creado') {
+      const statusNames: Record<string, string> = {
+        'dictado': 'Dictado',
+        'facturado': 'Facturado',
+        'pagado': 'Pagado'
+      };
+      const statusName = statusNames[course.status] || course.status;
+      alert(`⚠️ ERROR: Solo se pueden eliminar cursos en estado "Creado".\n\n` +
+            `Estado actual: ${statusName}\n\n` +
+            `Los cursos que ya han sido dictados, facturados o pagados no pueden eliminarse.\n` +
+            `Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
+      return;
+    }
+
     if (window.confirm('¿Estás seguro de que quieres eliminar este curso?')) {
       try {
         const success = await deleteCourse(courseId);
