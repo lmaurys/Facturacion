@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Database, UserPlus, Pencil, Save, X, ToggleLeft, ToggleRight, Trash2, AlertCircle } from 'lucide-react';
+import { Database, UserPlus, Pencil, Save, X, ToggleLeft, ToggleRight, Trash2, AlertCircle, Download } from 'lucide-react';
 import { Instructor } from '../types';
-import { loadInstructors, addInstructor, updateInstructor, deleteInstructor } from '../utils/storage';
+import { loadInstructors, addInstructor, updateInstructor, deleteInstructor, exportAllData, clearAllData } from '../utils/storage';
 
 const DataManagement: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState<string>('');
@@ -11,6 +11,11 @@ const DataManagement: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const [message, setMessage] = useState<string>('');
+  const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+  const [clearConfirmText, setClearConfirmText] = useState<string>('');
+  const [clearConfirmChecked, setClearConfirmChecked] = useState<boolean>(false);
+  const [isClearing, setIsClearing] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
   useEffect(() => {
     // Mostrar cuándo se cargó la página del sistema
@@ -115,6 +120,77 @@ const DataManagement: React.FC = () => {
     }
   };
 
+  const handleDownloadJson = async () => {
+    try {
+      setMessage('');
+      setIsDownloading(true);
+      const json = await exportAllData();
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const fileName = `facturacion-backup-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setMessage('JSON descargado.');
+    } catch (e) {
+      console.error(e);
+      setMessage('No se pudo descargar el JSON.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const openClearModal = () => {
+    setMessage('');
+    setClearConfirmText('');
+    setClearConfirmChecked(false);
+    setShowClearConfirm(true);
+  };
+
+  const closeClearModal = () => {
+    if (isClearing) return;
+    setShowClearConfirm(false);
+    setClearConfirmText('');
+    setClearConfirmChecked(false);
+  };
+
+  const confirmPhrase = 'BORRAR';
+  const canConfirmClear = clearConfirmChecked && clearConfirmText.trim().toUpperCase() === confirmPhrase;
+
+  const handleClearAllData = async () => {
+    if (!canConfirmClear) return;
+    setIsClearing(true);
+    setMessage('');
+    try {
+      const ok = await clearAllData();
+      if (!ok) {
+        setMessage('No se pudieron limpiar los datos (falló el guardado en Azure).');
+        return;
+      }
+
+      const data = await loadInstructors();
+      setInstructors(data);
+      setShowClearConfirm(false);
+      setClearConfirmText('');
+      setClearConfirmChecked(false);
+      setMessage('Datos limpiados.');
+    } catch (e) {
+      console.error(e);
+      setMessage('Error limpiando los datos.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
@@ -129,7 +205,7 @@ const DataManagement: React.FC = () => {
           </div>
         </div>
 
-    {/* Información de última actualización */}
+        {/* Información de última actualización */}
         <div className="bg-white shadow-md rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Estado del Sistema</h3>
           
@@ -159,16 +235,49 @@ const DataManagement: React.FC = () => {
           </div>
         </div>
 
-        {/* Administración de Instructores */}
+        {/* Herramientas de Datos */}
         <div className="bg-white shadow-md rounded-lg p-6 mt-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Instructores</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Herramientas</h3>
             {message && (
               <div className="flex items-center text-sm text-gray-600">
                 <AlertCircle size={16} className="mr-2 text-amber-500" />
                 {message}
               </div>
             )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={handleDownloadJson}
+              disabled={isDownloading}
+              className="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-60"
+              title="Descargar respaldo JSON"
+            >
+              <Download size={16} className="mr-2" />
+              {isDownloading ? 'Descargando…' : 'Descargar JSON'}
+            </button>
+
+            <button
+              onClick={openClearModal}
+              className="inline-flex items-center justify-center px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              title="Limpiar todos los datos"
+            >
+              <Trash2 size={16} className="mr-2" />
+              Limpiar datos
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-500 mt-3">
+            Recomendación: descarga el JSON antes de limpiar.
+          </p>
+        </div>
+
+        {/* Administración de Instructores */}
+        <div className="bg-white shadow-md rounded-lg p-6 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Instructores</h3>
+            {/* Mensajes ahora se muestran en Herramientas */}
           </div>
 
           <div className="flex gap-2 mb-4">
@@ -245,6 +354,72 @@ const DataManagement: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmación de borrado */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-lg font-semibold text-gray-900">Confirmar limpieza total</h4>
+              <button
+                onClick={closeClearModal}
+                className="text-gray-600 hover:text-gray-800"
+                title="Cerrar"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-800">
+              Esta acción borra TODOS los datos (cursos, clientes, facturas, instructores y calendarios) y los sobrescribe en Azure.
+              No se puede deshacer.
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Escribe <span className="font-semibold">{confirmPhrase}</span> para habilitar el borrado
+              </label>
+              <input
+                value={clearConfirmText}
+                onChange={(e) => setClearConfirmText(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder={confirmPhrase}
+                aria-label="Confirmación de borrado"
+                disabled={isClearing}
+              />
+
+              <label className="flex items-center mt-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={clearConfirmChecked}
+                  onChange={(e) => setClearConfirmChecked(e.target.checked)}
+                  disabled={isClearing}
+                />
+                Entiendo que esta acción es irreversible
+              </label>
+            </div>
+
+            <div className="mt-5 flex gap-3 justify-end">
+              <button
+                onClick={closeClearModal}
+                disabled={isClearing}
+                className="px-3 py-2 rounded-md border text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleClearAllData}
+                disabled={!canConfirmClear || isClearing}
+                className="px-3 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {isClearing ? 'Limpiando…' : 'Borrar todo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

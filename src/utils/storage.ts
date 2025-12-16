@@ -1373,6 +1373,45 @@ export const validateInvoiceUpdate = async (invoiceId: string, expectedData: Par
   }
 };
 
+// ⚠️ BORRADO TOTAL: Limpia todos los datos (cursos/clientes/facturas/instructores/blackouts)
+// y persiste el cambio en Azure (sobrescribe el JSON remoto).
+export const clearAllData = async (): Promise<boolean> => {
+  try {
+    console.log('🗑️ BORRADO TOTAL: limpiando todo el cache local y Azure...');
+
+    localDataCache.courses = [];
+    localDataCache.clients = [];
+    localDataCache.invoices = [];
+    localDataCache.instructors = [];
+    localDataCache.blackouts = [];
+    localDataCache.lastUpdate = new Date().toISOString();
+    // Importante: marcar como inicializado para evitar re-hidratar desde Azure antes de guardar
+    localDataCache.isInitialized = true;
+
+    dispatchSyncEvent('start');
+    const success = await forceSaveToAzure();
+
+    if (success) {
+      dispatchSyncEvent('success');
+      window.dispatchEvent(new CustomEvent('courseUpdated'));
+      window.dispatchEvent(new CustomEvent('clientUpdated'));
+      window.dispatchEvent(new CustomEvent('invoiceUpdated'));
+      window.dispatchEvent(new CustomEvent('instructorUpdated'));
+      window.dispatchEvent(new CustomEvent('blackoutUpdated'));
+      console.log('✅ BORRADO TOTAL completado y guardado en Azure');
+      return true;
+    }
+
+    dispatchSyncEvent('error');
+    console.log('❌ BORRADO TOTAL falló al guardar en Azure');
+    return false;
+  } catch (error) {
+    dispatchSyncEvent('error');
+    console.error('❌ Error en BORRADO TOTAL:', error);
+    return false;
+  }
+};
+
 export const diagnoseInvoiceIssues = async (invoiceId: string): Promise<void> => {
   try {
     console.log('🔍 === DIAGNÓSTICO ESPECÍFICO DE FACTURA ===');

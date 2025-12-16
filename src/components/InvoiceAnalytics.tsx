@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { InvoiceFromCourse, Client, Course, Instructor } from '../types';
+import { InvoiceFromCourse, Client, Course, Instructor, TransferOption } from '../types';
 import { loadInvoices, loadClients, loadCourses, loadInstructors } from '../utils/storage';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, DollarSign, FileText, Users, Calendar, BarChart3 } from 'lucide-react';
+import { TrendingUp, DollarSign, FileText, Users, Calendar, BarChart3, Eye } from 'lucide-react';
+import InvoiceViewer from './InvoiceViewer';
+import { transferOptions } from '../constants/invoiceConstants';
 
 interface AnalyticsData {
   monthlyRevenue: Array<{ month: string; paid: number; sent: number; draft: number; invoices: number }>;
@@ -19,12 +21,23 @@ interface AnalyticsData {
   coursesStatusDistribution: Array<{ name: string; value: number; count: number; colorClass: string }>;
   byInstructor: Array<{ instructor: string; courses: number; totalValue: number; paidCourses: number; billedCourses: number; plannedCourses: number }>;
   overdueInvoices: Array<{
+    invoiceId: string;
     invoiceNumber: string;
+    clientId: string;
     clientName: string;
     amount: number;
     dueDate: string;
     daysOverdue: number;
     status: string;
+  }>;
+
+  transferByDestination: Array<{
+    option: TransferOption;
+    label: string;
+    received: number;
+    expected: number;
+    paidCount: number;
+    openCount: number;
   }>;
 }
 
@@ -36,6 +49,7 @@ const InvoiceAnalytics: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('all');
+  const [viewingInvoice, setViewingInvoice] = useState<InvoiceFromCourse | null>(null);
 
   useEffect(() => {
     loadData();
@@ -221,7 +235,9 @@ const InvoiceAnalytics: React.FC = () => {
         const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
         
         return {
+          invoiceId: invoice.id,
           invoiceNumber: invoice.invoiceNumber,
+          clientId: invoice.clientId,
           clientName: client?.name || 'Cliente no encontrado',
           amount: invoice.total,
           dueDate: dueDate.toISOString().split('T')[0],
@@ -231,13 +247,49 @@ const InvoiceAnalytics: React.FC = () => {
       })
       .sort((a, b) => b.daysOverdue - a.daysOverdue);
 
+    // 7. Discriminación por destino de transferencia
+    const transferMap = new Map<TransferOption, { received: number; expected: number; paidCount: number; openCount: number }>;
+    (Object.keys(transferOptions) as TransferOption[]).forEach(opt => {
+      transferMap.set(opt, { received: 0, expected: 0, paidCount: 0, openCount: 0 });
+    });
+
+    yearInvoices.forEach(inv => {
+      const opt = (inv.transferOption || 'usa') as TransferOption;
+      if (!transferMap.has(opt)) {
+        transferMap.set(opt, { received: 0, expected: 0, paidCount: 0, openCount: 0 });
+      }
+      const agg = transferMap.get(opt)!;
+
+      if (inv.status === 'paid') {
+        agg.received += (inv.paidAmount ?? inv.total);
+        agg.paidCount += 1;
+      } else {
+        // "Esperado" = facturas no pagadas (enviadas + borrador)
+        agg.expected += inv.total;
+        agg.openCount += 1;
+      }
+    });
+
+    const transferByDestination = (Array.from(transferMap.entries()) as Array<[TransferOption, { received: number; expected: number; paidCount: number; openCount: number }]> )
+      .map(([option, v]) => ({
+        option,
+        label: transferOptions[option]?.name || option,
+        received: v.received,
+        expected: v.expected,
+        paidCount: v.paidCount,
+        openCount: v.openCount
+      }))
+      .filter(row => (row.received + row.expected) > 0)
+      .sort((a, b) => (b.received + b.expected) - (a.received + a.expected));
+
     setAnalytics({
       monthlyRevenue: monthlyData,
       monthlyCoursesCreated: monthlyCoursesData,
       topClients,
       coursesStatusDistribution,
       byInstructor,
-      overdueInvoices
+      overdueInvoices,
+      transferByDestination
     });
   }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, getYear, getMonthIndex]);
 
@@ -263,6 +315,22 @@ const InvoiceAnalytics: React.FC = () => {
       console.error('Error loading analytics data:', error);
     }
   };
+
+  const handleViewOverdueInvoice = (invoiceId: string) => {
+    const invoice = invoices.find(i => i.id === invoiceId);
+    if (!invoice) {
+      alert('Factura no encontrada.');
+      return;
+    }
+    const client = clients.find(c => c.id === invoice.clientId);
+    if (!client) {
+      alert('Cliente no encontrado para esta factura.');
+      return;
+    }
+    setViewingInvoice(invoice);
+  };
+
+  const closeViewer = () => setViewingInvoice(null);
 
 
   const formatCurrency = (amount: number) => {
@@ -583,6 +651,7 @@ const InvoiceAnalytics: React.FC = () => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Fecha Vencimiento</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Días Vencidos</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-red-900 uppercase tracking-wider">Estado</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-red-900 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -608,12 +677,66 @@ const InvoiceAnalytics: React.FC = () => {
                         {invoice.status === 'sent' ? 'Enviada' : 'Borrador'}
                       </span>
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-right">
+                      <button
+                        onClick={() => handleViewOverdueInvoice(invoice.invoiceId)}
+                        className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"
+                        title="Ver factura"
+                        aria-label="Ver factura"
+                      >
+                        <Eye size={16} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+      )}
+
+      {/* Discriminación por destino de transferencia */}
+      {analytics.transferByDestination.length > 0 && (
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Transferencias por cuenta destino</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destino</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Recibido</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Esperado</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Facturas</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {analytics.transferByDestination.map((row) => (
+                  <tr key={row.option} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.label}</td>
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-green-700">{formatCurrency(row.received)}</td>
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-amber-700">{formatCurrency(row.expected)}</td>
+                    <td className="px-4 py-3 text-sm text-right text-gray-700">
+                      {formatNumber(row.paidCount + row.openCount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            Recibido = facturas pagadas. Esperado = facturas no pagadas.
+          </p>
+        </div>
+      )}
+
+      {/* Modal para ver factura (mismo popup que en Gestión de Facturas) */}
+      {viewingInvoice && (
+        <InvoiceViewer
+          invoice={viewingInvoice}
+          client={clients.find(c => c.id === viewingInvoice.clientId)!}
+          courses={courses.filter(c => viewingInvoice.courseIds.includes(c.id))}
+          onClose={closeViewer}
+        />
       )}
 
       <div className="bg-white shadow-md rounded-lg p-6">
