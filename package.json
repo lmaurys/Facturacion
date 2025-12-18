@@ -14,7 +14,7 @@
     "@supabase/supabase-js": "^2.49.8",
     "dexie": "^4.0.11",
     "html2canvas": "^1.4.1",
-    "jspdf": "^2.5.1",
+    "jspdf": "^3.0.4",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -39,6 +39,6 @@
     "ts-jest": "^29.4.4",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.2"
+    "vite": "^6.4.1"
   }
 }
