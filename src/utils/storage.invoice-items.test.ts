@@ -1,3 +1,19 @@
+jest.mock('./azureBlobSync', () => {
+  const now = new Date().toISOString();
+  return {
+    loadDataFromAzure: jest.fn(async () => ({
+      courses: [],
+      clients: [],
+      invoices: [],
+      exportDate: now,
+      version: 3
+    })),
+    saveDataToAzure: jest.fn(async () => true),
+    syncWithAzure: jest.fn(async () => true),
+    diagnoseBlobStorage: jest.fn(async () => {})
+  };
+});
+
 import { addInvoice, loadInvoices } from './storage';
 import { InvoiceFromCourse, Item } from '../types';
 
@@ -12,17 +28,18 @@ describe('Invoice item persistence', () => {
       courseIds: [],
       invoiceNumber: 'TEST-001',
       invoiceDate: '2025-10-05',
-      issuer: 'colombia' as const,
+      currency: 'USD' as const,
+      issuerId: 'issuer_test' as const,
       language: 'es' as const,
       paymentTerms: 30,
       subtotal: 350,
       total: 350,
       status: 'draft' as const,
-      transferOption: 'usa' as const,
+      transferOptionId: 'transfer_test' as const,
       observations: 'Factura de prueba',
       items
     };
-    const saved = await addInvoice(invoiceData);
+    const saved = await addInvoice(invoiceData as unknown as Omit<InvoiceFromCourse, 'id'>);
     expect(saved).toBeTruthy();
     expect(saved?.items).toEqual(items);
 

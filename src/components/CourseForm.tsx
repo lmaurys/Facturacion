@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Course, Client, Instructor } from '../types';
+import { Course, Client, Currency, Instructor, supportedCurrencies } from '../types';
 import { X, Save, ArrowUp } from 'lucide-react';
 import { loadClients, loadInstructors } from '../utils/storage';
 
@@ -18,6 +18,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     hours: 0,
     hourlyRate: 0,
     totalValue: 0,
+    currency: 'USD',
     clientId: '',
     instructorId: '',
     invoiceNumber: '',
@@ -61,7 +62,10 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
 
   useEffect(() => {
     if (course) {
-      setFormData(course);
+      setFormData({
+        ...(course as any),
+        currency: ((course as any).currency || 'USD') as Currency,
+      });
     }
   }, [course]);
 
@@ -85,7 +89,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     e.preventDefault();
     // si no hay instructor seleccionado pero existe uno activo por defecto, asignarlo
     if (!formData.instructorId && instructors.length > 0) {
-      const preferred = instructors.find(i => i.name.toLowerCase().includes('luis maury') && i.active) || instructors.find(i => i.active) || instructors[0];
+      const preferred = instructors.find(i => i.active) || instructors[0];
       onSave({ ...formData, instructorId: preferred.id });
       return;
     }
@@ -236,6 +240,24 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Moneda
+                </label>
+                <select
+                  name="currency"
+                  value={formData.currency}
+                  onChange={handleInputChange}
+                  disabled={isPaidCourse}
+                  title={isPaidCourse ? 'No se puede editar - Curso pagado' : 'Moneda del curso'}
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isPaidCourse ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                >
+                  {supportedCurrencies.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

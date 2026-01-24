@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Course, Client, Item } from '../types';
-import { loadCourses, loadClients, getAvailableCoursesForInvoicing, getNextInvoiceNumber, updateCourse } from '../utils/storage';
+import { Course, Client, Currency, Item } from '../types';
+import { loadCourses, loadClients, getAvailableCoursesForInvoicing, getNextInvoiceNumber, reserveNextInvoiceNumber, updateCourse } from '../utils/storage';
 import { FileText, Plus, X } from 'lucide-react';
 import { getCurrentDateForInput } from '../utils/dateUtils';
 import { formatHours, formatHourlyRate, formatCurrency } from '../utils/numberUtils';
 
 interface InvoiceFromCoursesProps {
-  onGenerateInvoice: (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string) => void;
+  onGenerateInvoice: (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string, currency: Currency) => void;
   onClose: () => void;
 }
 
@@ -16,6 +16,7 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [invoiceNumber, setInvoiceNumber] = useState<string>('');
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -42,17 +43,37 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
   };
 
   const handleCourseToggle = (courseId: string) => {
-    setSelectedCourses(prev => 
-      prev.includes(courseId) 
-        ? prev.filter(id => id !== courseId)
-        : [...prev, courseId]
-    );
+    const course = courses.find(c => c.id === courseId);
+    if (!course) return;
+
+    setSelectedCourses(prev => {
+      const isSelected = prev.includes(courseId);
+      if (isSelected) {
+        const next = prev.filter(id => id !== courseId);
+        if (next.length === 0) {
+          setSelectedCurrency(null);
+        }
+        return next;
+      }
+
+      if (selectedCurrency && course.currency !== selectedCurrency) {
+        alert(`No puedes mezclar monedas en una misma factura.\n\nYa seleccionaste ${selectedCurrency} y este curso está en ${course.currency}.`);
+        return prev;
+      }
+
+      if (!selectedCurrency) {
+        setSelectedCurrency(course.currency);
+      }
+
+      return [...prev, courseId];
+    });
   };
 
   const handleClientChange = async (clientId: string) => {
     setSelectedClientId(clientId);
     // Limpiar selección de cursos
     setSelectedCourses([]);
+    setSelectedCurrency(null);
     
     // Cargar cursos disponibles para este cliente
     if (clientId) {
@@ -80,12 +101,23 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
       selectedCourses.includes(course.id)
     );
 
+    const currency: Currency = (selectedCourseObjects[0]?.currency || 'USD') as Currency;
+    const hasMixedCurrencies = selectedCourseObjects.some(c => c.currency !== currency);
+    if (hasMixedCurrencies) {
+      alert('No puedes generar una factura con cursos de diferentes monedas.');
+      return;
+    }
+
+    // Reservar el siguiente número SOLO al generar
+    const reservedInvoiceNumber = await reserveNextInvoiceNumber();
+    setInvoiceNumber(reservedInvoiceNumber);
+
     // Actualizar cursos a estado "facturada" y asignar número de factura
     for (const course of selectedCourseObjects) {
       await updateCourse(course.id, {
         ...course,
         status: 'facturado',
-        invoiceNumber: invoiceNumber,
+        invoiceNumber: reservedInvoiceNumber,
         invoiceDate: new Date().toISOString().split('T')[0]
       });
     }
@@ -96,7 +128,7 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
       unitPrice: course.hourlyRate
     }));
 
-    onGenerateInvoice(items, selectedClient, selectedCourses, invoiceNumber);
+    onGenerateInvoice(items, selectedClient, selectedCourses, reservedInvoiceNumber, currency);
   };
 
   const getTotalAmount = (): number => {
@@ -183,12 +215,12 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
                                 {course.startDate} - {course.endDate}
                               </p>
                               <p className="text-sm text-gray-600">
-                                {formatHours(course.hours)} horas × ${formatHourlyRate(course.hourlyRate)}/hora
+                                {formatHours(course.hours)} horas × {formatCurrency(course.hourlyRate, course.currency)}/hora
                               </p>
                             </div>
                             <div className="text-right">
                               <p className="font-semibold text-gray-900">
-                                {formatCurrency(course.totalValue)}
+                                {formatCurrency(course.totalValue, course.currency)}
                               </p>
                               <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                                 course.status === 'pagado' 
@@ -217,7 +249,7 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
                   {selectedCourses.length} curso(s) seleccionado(s)
                 </span>
                 <span className="text-xl font-bold text-gray-900">
-                  Total: {formatCurrency(getTotalAmount())}
+                  Total: {formatCurrency(getTotalAmount(), (selectedCurrency || 'USD') as Currency)}
                 </span>
               </div>
             </div>

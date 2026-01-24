@@ -418,7 +418,23 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
               <span className="ml-2 text-sm font-medium text-green-600">Valor Total</span>
             </div>
             <span className="text-xl font-bold text-green-900">
-              {formatCurrency(coursesInMonth.reduce((sum, course) => sum + getMonthlyValueForCourse(course), 0))}
+              {(() => {
+                const totalsByCurrency = coursesInMonth.reduce((acc, course) => {
+                  const currency = ((course as any).currency || 'USD') as string;
+                  acc[currency] = (acc[currency] || 0) + getMonthlyValueForCourse(course);
+                  return acc;
+                }, {} as Record<string, number>);
+
+                const currencies = Object.keys(totalsByCurrency);
+                if (currencies.length === 0) return formatCurrency(0, 'USD');
+                if (currencies.length === 1) {
+                  const c = currencies[0];
+                  return formatCurrency(totalsByCurrency[c], c);
+                }
+                return currencies
+                  .map(c => formatCurrency(totalsByCurrency[c], c))
+                  .join(' / ');
+              })()}
             </span>
           </div>
         </div>
@@ -504,8 +520,8 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
                           title={`${course.courseName}
 Cliente: ${getClientName(course.clientId)}
 Fechas: ${course.startDate} - ${course.endDate}
-Valor total: ${formatCurrency(course.totalValue)}
-Valor diario: ${formatCurrency(calculateDailyValue(course))}
+Valor total: ${formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}
+Valor diario: ${formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}
 Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones: ${course.observations}` : ''}`}
                         >
                           <div className="font-medium truncate mb-1">
@@ -528,7 +544,7 @@ Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones:
                           </div>
                           <div className="text-right mt-1">
                             <div className="text-xs font-bold">
-                              {formatCurrency(calculateDailyValue(course))}/día
+                              {formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}/día
                             </div>
                           </div>
                         </div>

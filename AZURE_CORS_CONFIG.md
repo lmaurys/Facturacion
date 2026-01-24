@@ -13,7 +13,7 @@ https://[nombre-de-tu-static-web-app].azurestaticapps.net
 ## 📋 Pasos para Configurar CORS
 
 ### 1. **Ir a Azure Portal**
-- Ve a tu **Storage Account** (cmfiles)
+- Ve a tu **Storage Account** (<account>)
 - En el menú lateral, busca **Settings** → **Resource sharing (CORS)**
 
 ### 2. **Configurar Blob service CORS**
@@ -66,7 +66,7 @@ curl -H "Origin: https://tu-app.azurestaticapps.net" \
      -H "Access-Control-Request-Method: GET" \
      -H "Access-Control-Request-Headers: X-Requested-With" \
      -X OPTIONS \
-     https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json
+    https://<account>.blob.core.windows.net/<container>/<blob>.json
 ```
 
 ### 2. **En la Aplicación**
@@ -87,7 +87,7 @@ az storage cors add \
     --exposed-headers "*" \
     --max-age 86400 \
     --services b \
-    --account-name cmfiles
+    --account-name <account>
 ```
 
 ## 🚨 Troubleshooting

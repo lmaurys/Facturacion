@@ -1,23 +1,22 @@
 import React, { useState, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Printer, Download, FileText, GraduationCap, Building, Database, BarChart3, Menu, X, ArrowUp } from 'lucide-react';
+import { Printer, Download, FileText, GraduationCap, Database, BarChart3, Menu, X, ArrowUp } from 'lucide-react';
 import InvoiceForm from './components/InvoiceForm';
 import InvoicePreview from './components/InvoicePreview';
 import CourseManagement from './components/CourseManagement';
-import ClientManagement from './components/ClientManagement';
 import InvoiceManagement from './components/InvoiceManagement';
-import DataManagement from './components/DataManagement';
+import Admin from './components/Admin';
 import InvoiceAnalytics from './components/InvoiceAnalytics';
 import InvoiceFromCourses from './components/InvoiceFromCourses';
-import { Invoice, Item, Issuer, Language, TransferOption, Client, InvoiceFromCourse } from './types';
+import { Invoice, Item, Language, Client, InvoiceFromCourse, Currency, IssuerId, TransferOptionId } from './types';
 import { addInvoice, loadClients, initializeAutoSync, initializeFromAzure } from './utils/storage';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-type AppMode = 'invoicing' | 'courses' | 'clients' | 'invoices' | 'analytics' | 'data';
+type AppMode = 'invoicing' | 'courses' | 'invoices' | 'analytics' | 'admin';
 
 const App: React.FC = () => {
-  const [currentMode, setCurrentMode] = useState<AppMode>('clients');
+  const [currentMode, setCurrentMode] = useState<AppMode>('courses');
   const [showInvoiceFromCourses, setShowInvoiceFromCourses] = useState(false);
   const [hasTriedAutoLoad, setHasTriedAutoLoad] = useState(false);
   const [invoice, setInvoice] = useState<Invoice>({
@@ -28,13 +27,14 @@ const App: React.FC = () => {
     clientCity: '',
     items: [],
     total: 0,
-    transferOption: 'usa',
+    currency: 'USD',
+    transferOptionId: '',
   });
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [paymentTerms, setPaymentTerms] = useState(30);
-  const [selectedIssuer, setSelectedIssuer] = useState<Issuer>('colombia');
+  const [selectedIssuerId, setSelectedIssuerId] = useState<IssuerId>('');
   const [language, setLanguage] = useState<Language>('es');
-  const [selectedTransfer, setSelectedTransfer] = useState<TransferOption>('usa');
+  const [selectedTransferOptionId, setSelectedTransferOptionId] = useState<TransferOptionId>('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -101,8 +101,8 @@ const App: React.FC = () => {
 
   // Sincronizar la opción de transferencia con el invoice
   React.useEffect(() => {
-    setInvoice((prev) => ({ ...prev, transferOption: selectedTransfer }));
-  }, [selectedTransfer]);
+    setInvoice((prev) => ({ ...prev, transferOptionId: selectedTransferOptionId }));
+  }, [selectedTransferOptionId]);
 
   const handlePrint = useReactToPrint({
     content: () => (window.innerWidth < 768 ? hiddenInvoiceRef.current : visibleInvoiceRef.current),
@@ -176,7 +176,8 @@ const App: React.FC = () => {
         clientCity: '',
         items: [],
         total: 0,
-        transferOption: selectedTransfer,
+        currency: invoice.currency,
+        transferOptionId: selectedTransferOptionId,
       });
       setInvoiceNumber('');
       setLinkedInvoiceId('');
@@ -184,7 +185,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateInvoiceFromCourses = async (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string) => {
+  const handleGenerateInvoiceFromCourses = async (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string, currency: Currency) => {
     const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     
     // Crear y guardar la factura en la base de datos
@@ -193,13 +194,14 @@ const App: React.FC = () => {
       courseIds: courseIds,
       invoiceNumber: invoiceNumber,
       invoiceDate: new Date().toISOString().split('T')[0],
-      issuer: selectedIssuer,
+      currency,
+      issuerId: selectedIssuerId,
       language: language,
       paymentTerms: paymentTerms,
       subtotal: total,
       total: total,
       status: 'draft',
-      transferOption: selectedTransfer,
+      transferOptionId: selectedTransferOptionId,
       observations: `Factura generada desde cursos: ${items.map(item => item.description).join(', ')}`,
       items: [] // Solo ítems manuales después
     };
@@ -226,7 +228,8 @@ const App: React.FC = () => {
       clientCity: clientData.city,
       items,
       total,
-      transferOption: selectedTransfer,
+      currency,
+      transferOptionId: selectedTransferOptionId,
     });
     
     setShowInvoiceFromCourses(false);
@@ -257,8 +260,8 @@ const App: React.FC = () => {
 
       let finalInvoiceNumber = existingInvoiceNumber;
       if (!finalInvoiceNumber) {
-        const { getNextInvoiceNumber } = await import('./utils/storage');
-        finalInvoiceNumber = await getNextInvoiceNumber();
+        const { reserveNextInvoiceNumber } = await import('./utils/storage');
+        finalInvoiceNumber = await reserveNextInvoiceNumber();
         setInvoiceNumber(finalInvoiceNumber);
       }
 
@@ -280,13 +283,14 @@ const App: React.FC = () => {
         courseIds,
         invoiceNumber: finalInvoiceNumber,
         invoiceDate: new Date().toISOString().split('T')[0],
-        issuer: selectedIssuer,
+        currency: invoice.currency,
+        issuerId: selectedIssuerId,
         language,
         paymentTerms,
         subtotal: invoice.total,
         total: invoice.total,
         status: 'draft',
-        transferOption: selectedTransfer,
+        transferOptionId: selectedTransferOptionId,
         observations: courseIds.length > 0
           ? `Factura generada desde cursos: ${invoice.items.map(item => item.description).join(', ')}`
           : `Factura tradicional - Cliente: ${invoice.clientName}, NIT: ${invoice.clientNIT}`,
@@ -338,17 +342,14 @@ const App: React.FC = () => {
     if (currentMode === 'courses') {
       return <CourseManagement />;
     }
-    if (currentMode === 'clients') {
-      return <ClientManagement />;
-    }
     if (currentMode === 'invoices') {
       return <InvoiceManagement />;
     }
     if (currentMode === 'analytics') {
       return <InvoiceAnalytics />;
     }
-    if (currentMode === 'data') {
-      return <DataManagement />;
+    if (currentMode === 'admin') {
+      return <Admin />;
     }
 
     // Modo de facturación (por defecto)
@@ -363,15 +364,15 @@ const App: React.FC = () => {
                 addItem={addItem}
                 editItem={editItem}
                 deleteItem={deleteItem}
-                selectedIssuer={selectedIssuer}
-                setSelectedIssuer={setSelectedIssuer}
+                selectedIssuerId={selectedIssuerId}
+                setSelectedIssuerId={setSelectedIssuerId}
                 invoiceNumber={invoiceNumber}
                 paymentTerms={paymentTerms}
                 setPaymentTerms={setPaymentTerms}
                 language={language}
                 setLanguage={setLanguage}
-                selectedTransfer={selectedTransfer}
-                setSelectedTransfer={setSelectedTransfer}
+                selectedTransferOptionId={selectedTransferOptionId}
+                setSelectedTransferOptionId={setSelectedTransferOptionId}
                 onGenerateFromCourses={() => setShowInvoiceFromCourses(true)}
                 onClearInvoice={clearInvoice}
                 onSaveInvoice={handleSaveInvoice}
@@ -383,7 +384,7 @@ const App: React.FC = () => {
                 <InvoicePreview
                   invoice={invoice}
                   invoiceNumber={invoiceNumber}
-                  selectedIssuer={selectedIssuer}
+                  selectedIssuerId={selectedIssuerId}
                   language={language}
                   paymentTerms={paymentTerms}
                 />
@@ -412,7 +413,7 @@ const App: React.FC = () => {
                 <InvoicePreview
                   invoice={invoice}
                   invoiceNumber={invoiceNumber}
-                  selectedIssuer={selectedIssuer}
+                  selectedIssuerId={selectedIssuerId}
                   language={language}
                   paymentTerms={paymentTerms}
                 />
@@ -471,17 +472,6 @@ const App: React.FC = () => {
             {/* Menú de escritorio */}
             <div className="hidden md:flex space-x-2 lg:space-x-4">
               <button
-                onClick={() => setCurrentMode('clients')}
-                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentMode === 'clients'
-                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <Building className="mr-2" size={18} />
-                Clientes
-              </button>
-              <button
                 onClick={() => setCurrentMode('courses')}
                 className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   currentMode === 'courses'
@@ -526,15 +516,15 @@ const App: React.FC = () => {
                 Análisis
               </button>
               <button
-                onClick={() => setCurrentMode('data')}
+                onClick={() => setCurrentMode('admin')}
                 className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentMode === 'data'
+                  currentMode === 'admin'
                     ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 }`}
               >
                 <Database className="mr-2" size={18} />
-                Datos
+                Admin
               </button>
             </div>
           </div>
@@ -544,12 +534,11 @@ const App: React.FC = () => {
           <div className="md:hidden border-t border-gray-200 bg-white">
             <div className="px-2 pt-2 pb-3 space-y-1">
               {([
-                { key: 'clients', label: 'Clientes', icon: <Building className="mr-2" size={16} /> },
                 { key: 'courses', label: 'Cursos', icon: <GraduationCap className="mr-2" size={16} /> },
                 { key: 'invoicing', label: 'Facturación', icon: <FileText className="mr-2" size={16} /> },
                 { key: 'invoices', label: 'Facturas', icon: <FileText className="mr-2" size={16} /> },
                 { key: 'analytics', label: 'Análisis', icon: <BarChart3 className="mr-2" size={16} /> },
-                { key: 'data', label: 'Datos', icon: <Database className="mr-2" size={16} /> },
+                { key: 'admin', label: 'Admin', icon: <Database className="mr-2" size={16} /> },
               ] as const).map(item => (
                 <button
                   key={item.key}

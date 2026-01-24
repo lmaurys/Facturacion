@@ -397,7 +397,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                     <div className="text-xs text-gray-600">{formatDate(invoice.invoiceDate)}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold">{formatCurrency(invoice.total)}</div>
+                    <div className="text-sm font-bold">{formatCurrency(invoice.total, ((invoice as any).currency || 'USD'))}</div>
                     <span className={`${getStatusBadge(invoice.status)} mt-1 inline-block`}>{getStatusText(invoice.status)}</span>
                   </div>
                 </div>
@@ -536,9 +536,9 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                       <div className="text-sm font-medium text-gray-900 flex items-center">
                         <DollarSign className="mr-1" size={14} />
                         <div>
-                          <div className="font-bold">{formatCurrency(invoice.total)}</div>
+                          <div className="font-bold">{formatCurrency(invoice.total, ((invoice as any).currency || 'USD'))}</div>
                           <div className="text-xs text-gray-500 mt-1">
-                            Subtotal: {formatCurrency(invoice.subtotal)}
+                            Subtotal: {formatCurrency(invoice.subtotal, ((invoice as any).currency || 'USD'))}
                           </div>
                         </div>
                       </div>

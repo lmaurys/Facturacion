@@ -5,7 +5,11 @@ import ClientForm from './ClientForm';
 import { loadClients, addClient, updateClient, deleteClient } from '../utils/storage';
 import { initializeDefaultClients } from '../utils/defaultData';
 
-const ClientManagement: React.FC = () => {
+interface ClientManagementProps {
+  embedded?: boolean;
+}
+
+const ClientManagement: React.FC<ClientManagementProps> = ({ embedded }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -104,25 +108,31 @@ const ClientManagement: React.FC = () => {
     setIsEditing(false);
   };
 
-  return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <ClientList
-          clients={clients}
-          onEdit={handleEditClient}
-          onDelete={handleDeleteClient}
-          onAdd={handleAddClient}
+  const content = (
+    <div className="max-w-7xl mx-auto">
+      <ClientList
+        clients={clients}
+        onEdit={handleEditClient}
+        onDelete={handleDeleteClient}
+        onAdd={handleAddClient}
+      />
+
+      {showForm && (
+        <ClientForm
+          client={editingClient}
+          onSave={handleSaveClient}
+          onCancel={handleCancelForm}
+          isEditing={isEditing}
         />
-        
-        {showForm && (
-          <ClientForm
-            client={editingClient}
-            onSave={handleSaveClient}
-            onCancel={handleCancelForm}
-            isEditing={isEditing}
-          />
-        )}
-      </div>
+      )}
+    </div>
+  );
+
+  return embedded ? (
+    <>{content}</>
+  ) : (
+    <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
+      {content}
     </div>
   );
 };

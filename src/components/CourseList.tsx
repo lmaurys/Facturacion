@@ -3,7 +3,7 @@ import { Course, Client, Instructor } from '../types';
 import { Edit2, Trash2, Plus, Calendar, DollarSign, Clock, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { loadClients, loadInstructors } from '../utils/storage';
 import { formatDate } from '../utils/dateUtils';
-import { formatHours, formatHourlyRate, formatCurrency } from '../utils/numberUtils';
+import { formatHours, formatCurrency } from '../utils/numberUtils';
 
 interface CourseListProps {
   courses: Course[];
@@ -177,7 +177,7 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
 Curso: ${course.courseName}
 Cliente: ${getClientName(course.clientId)}
 Estado actual: ${statusName}
-Valor: ${formatCurrency(course.totalValue)}
+Valor: ${formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}
 
 Este curso está en estado "${statusName}" y no puede ser eliminado.
 Solo los cursos que no han sido dictados, facturados o pagados pueden eliminarse.
@@ -331,7 +331,7 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                     )}
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold">{formatCurrency(course.totalValue)}</div>
+                    <div className="text-sm font-bold">{formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}</div>
                     <span className={`${getStatusBadge(course.status)}`}>{getStatusText(course.status)}</span>
                   </div>
                 </div>
@@ -483,17 +483,17 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                       <span className="font-medium">{formatHours(course.hours)}h</span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      ${formatHourlyRate(course.hourlyRate)}/h
+                      {formatCurrency(course.hourlyRate, ((course as any).currency || 'USD'))}/h
                     </div>
                   </td>
                   <td className="px-3 py-4">
                     <div className="text-sm font-medium text-gray-900 flex items-center mb-1">
                       <DollarSign className="mr-1" size={14} />
                       <div>
-                        <div className="font-bold">{formatCurrency(course.totalValue)}</div>
+                        <div className="font-bold">{formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}</div>
                         {course.status === 'pagado' && course.paidAmount > 0 && (
                           <div className="text-xs text-green-600 mt-1">
-                            Pagado: {formatCurrency(course.paidAmount)}
+                            Pagado: {formatCurrency(course.paidAmount, ((course as any).currency || 'USD'))}
                           </div>
                         )}
                       </div>

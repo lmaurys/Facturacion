@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { InvoiceFromCourse, Client, Course } from '../types';
-import { loadClients, loadCourses, updateInvoice, validateInvoiceUpdate, diagnoseInvoiceIssues, updateCourse } from '../utils/storage';
+import { Client, Course, Currency, InvoiceFromCourse, IssuerId, TransferOptionId, supportedCurrencies } from '../types';
+import { loadClients, loadCourses, loadIssuerProfiles, loadTransferOptions, updateInvoice, validateInvoiceUpdate, diagnoseInvoiceIssues, updateCourse } from '../utils/storage';
 import { Edit2, X, Save, AlertCircle, ArrowUp, Plus, Trash2 } from 'lucide-react';
-import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
+import { invoiceLabels } from '../constants/invoiceConstants';
+import { formatCurrency } from '../utils/numberUtils';
 
 interface InvoiceEditorProps {
   invoice: InvoiceFromCourse;
@@ -43,8 +44,14 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
   presetPaymentDate,
   presetPaidAmount
 }) => {
+  const initialIssuerId = ((invoice as any).issuerId || (invoice as any).issuer || '') as IssuerId;
+  const initialTransferOptionId = ((invoice as any).transferOptionId || (invoice as any).transferOption || '') as TransferOptionId;
+  const initialCurrency = ((invoice as any).currency || 'USD') as Currency;
+
   const [clients, setClients] = useState<Client[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [issuerProfiles, setIssuerProfiles] = useState<Array<{ id: string; label: string }>>([]);
+  const [transferOptionProfiles, setTransferOptionProfiles] = useState<Array<{ id: string; label: string }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceLineItem[]>([]);
@@ -52,11 +59,12 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
     clientId: invoice.clientId,
     invoiceNumber: invoice.invoiceNumber,
     invoiceDate: invoice.invoiceDate,
-    issuer: invoice.issuer,
+    currency: initialCurrency,
+    issuerId: initialIssuerId,
     language: invoice.language,
     paymentTerms: invoice.paymentTerms,
     status: presetStatus || invoice.status,
-    transferOption: invoice.transferOption || 'usa',
+    transferOptionId: initialTransferOptionId,
     observations: invoice.observations || '',
     paymentDate: presetPaymentDate || invoice.paymentDate || '',
     paidAmount: presetPaidAmount !== undefined ? presetPaidAmount : (invoice.paidAmount || invoice.total || 0)
@@ -64,12 +72,16 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
 
   useEffect(() => {
     const loadData = async () => {
-      const [loadedClients, loadedCourses] = await Promise.all([
+      const [loadedClients, loadedCourses, loadedIssuers, loadedTransfers] = await Promise.all([
         loadClients(),
-        loadCourses()
+        loadCourses(),
+        loadIssuerProfiles(),
+        loadTransferOptions(),
       ]);
       setClients(loadedClients);
       setCourses(loadedCourses);
+      setIssuerProfiles(loadedIssuers.map(i => ({ id: i.id, label: i.label })));
+      setTransferOptionProfiles(loadedTransfers.map(t => ({ id: t.id, label: t.label })));
       
       // Cargar las líneas de la factura desde los cursos relacionados
       const relatedCourses = loadedCourses.filter(course => 
@@ -268,13 +280,14 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
         courseIds: updatedCourseIds,
         invoiceNumber: formData.invoiceNumber,
         invoiceDate: formData.invoiceDate,
-        issuer: formData.issuer,
+        currency: formData.currency,
+        issuerId: formData.issuerId,
         language: formData.language,
         paymentTerms: formData.paymentTerms,
         subtotal: subtotal,
         total: total,
         status: formData.status,
-        transferOption: formData.transferOption,
+        transferOptionId: formData.transferOptionId,
         observations: formData.observations,
         paymentDate: formData.status === 'paid' ? formData.paymentDate : undefined,
         paidAmount: formData.status === 'paid' ? formData.paidAmount : undefined,
@@ -348,7 +361,8 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
 
       if (updatedInvoice) {
         const isValid = await validateInvoiceUpdate(invoice.id, {
-          issuer: formData.issuer,
+          issuerId: formData.issuerId,
+          currency: formData.currency,
           language: formData.language,
           status: formData.status,
           invoiceNumber: formData.invoiceNumber
@@ -377,13 +391,6 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
   };
 
   // getClientName no se usa en esta vista
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-ES', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
 
   const t = invoiceLabels[formData.language];
 
@@ -526,14 +533,36 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 Emisor *
               </label>
               <select
-                value={formData.issuer}
-                onChange={(e) => handleInputChange('issuer', e.target.value)}
+                value={formData.issuerId}
+                onChange={(e) => handleInputChange('issuerId', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 title="Seleccionar emisor de la factura"
                 required
               >
-                <option value="colombia">Colombia</option>
-                <option value="usa">USA</option>
+                <option value="" disabled>
+                  Configura emisores en Admin
+                </option>
+                {issuerProfiles.map(issuer => (
+                  <option key={issuer.id} value={issuer.id}>{issuer.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Moneda */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Moneda *
+              </label>
+              <select
+                value={formData.currency}
+                onChange={(e) => handleInputChange('currency', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Seleccionar moneda de la factura"
+                required
+              >
+                {supportedCurrencies.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </div>
 
@@ -576,15 +605,18 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 {t.transferOption} *
               </label>
               <select
-                value={formData.transferOption}
-                onChange={(e) => handleInputChange('transferOption', e.target.value)}
+                value={formData.transferOptionId}
+                onChange={(e) => handleInputChange('transferOptionId', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 title="Seleccionar opción de transferencia"
                 required
               >
-                <option value="usa">{transferOptions.usa.name}</option>
-                <option value="panama">{transferOptions.panama.name}</option>
-                <option value="colombia">{transferOptions.colombia.name}</option>
+                <option value="" disabled>
+                  Configura transferencias en Admin
+                </option>
+                {transferOptionProfiles.map(opt => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
               </select>
             </div>
 
@@ -764,10 +796,10 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                             <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                               <div className="flex justify-between items-center">
                                 <span className="text-sm font-medium text-blue-900">
-                                  Subtotal: {item.hours} hrs × {formatCurrency(item.hourlyRate)}/hr
+                                  Subtotal: {item.hours} hrs × {formatCurrency(item.hourlyRate, formData.currency)}/hr
                                 </span>
                                 <span className="text-lg font-bold text-blue-900">
-                                  {formatCurrency(item.totalValue)}
+                                  {formatCurrency(item.totalValue, formData.currency)}
                                 </span>
                               </div>
                             </div>
@@ -823,10 +855,10 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                           <div>
                             <div className="bg-green-50 border border-green-200 rounded-md p-3 h-full flex items-center justify-between">
                               <span className="text-sm font-medium text-green-900">
-                                Subtotal: {item.quantity} × {formatCurrency(item.unitPrice)}
+                                Subtotal: {item.quantity} × {formatCurrency(item.unitPrice, formData.currency)}
                               </span>
                               <span className="text-lg font-bold text-green-900">
-                                {formatCurrency(item.totalValue)}
+                                {formatCurrency(item.totalValue, formData.currency)}
                               </span>
                             </div>
                           </div>
@@ -842,7 +874,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                       Total de la Factura:
                     </span>
                     <span className="text-2xl font-bold text-gray-900">
-                      {formatCurrency(calculateSubtotal())}
+                      {formatCurrency(calculateSubtotal(), formData.currency)}
                     </span>
                   </div>
                 </div>

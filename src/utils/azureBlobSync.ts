@@ -1,18 +1,63 @@
-// Configuración de Azure Blob Storage con SAS Token (sin problemas de CORS)
-const AZURE_CONFIG = {
-  storageAccount: 'cmfiles',
-  containerName: 'capacitaciones',
-  blobName: 'sistema_gestion_completo.json',
-  // URL pública para lectura
+import { derivePublicUrlFromSasUrl, getAzureBlobConfig } from './azureBlobConfig';
+
+type EffectiveAzureConfig = {
+  publicUrl?: string;
+  blobUrlWithSas?: string;
+  blobName?: string;
+  usingUserConfig: boolean;
+};
+
+/**
+ * Configuración predeterminada de Azure Blob Storage.
+ * URL con SAS token que permite lectura, escritura, creación y adición (racw).
+ */
+const DEFAULT_AZURE_CONFIG = {
+  blobUrlWithSas: 'https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json?sp=racw&st=2025-07-11T01:17:09Z&se=2028-07-28T09:32:09Z&spr=https&sv=2024-11-04&sr=b&sig=%2BldzbqQsL35N2P4KSgUFIXMowCWL2rjkF50Uw4svfaw%3D',
   publicUrl: 'https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json',
-  // SAS Token para escritura
-  blobUrlWithSas: 'https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json?sp=racw&st=2025-07-11T01:17:09Z&se=2028-07-28T09:32:09Z&spr=https&sv=2024-11-04&sr=b&sig=%2BldzbqQsL35N2P4KSgUFIXMowCWL2rjkF50Uw4svfaw%3D'
+  blobName: 'sistema_gestion_completo.json'
+};
+
+const getEffectiveAzureConfig = (): EffectiveAzureConfig => {
+  const user = getAzureBlobConfig();
+  
+  // Si el usuario tiene configuración, usarla
+  if (user?.publicUrl || user?.blobUrlWithSas) {
+    const publicUrl = user.publicUrl || derivePublicUrlFromSasUrl(user.blobUrlWithSas);
+    const blobUrlWithSas = user.blobUrlWithSas;
+    const blobName = user.blobName;
+
+    return {
+      publicUrl,
+      blobUrlWithSas,
+      blobName,
+      usingUserConfig: true
+    };
+  }
+
+  // Si no hay configuración del usuario, usar la predeterminada
+  return {
+    publicUrl: DEFAULT_AZURE_CONFIG.publicUrl,
+    blobUrlWithSas: DEFAULT_AZURE_CONFIG.blobUrlWithSas,
+    blobName: DEFAULT_AZURE_CONFIG.blobName,
+    usingUserConfig: false
+  };
 };
 
 export interface SyncData {
   courses: unknown[];
   clients: unknown[];
   invoices: unknown[];
+  /**
+   * Config de conexión (se puede persistir dentro del mismo JSON remoto para que aplique en otros dispositivos).
+   */
+  azureBlobConfig?: {
+    publicUrl?: string;
+    blobUrlWithSas?: string;
+  };
+  issuerProfiles?: unknown[];
+  transferOptions?: unknown[];
+  invoiceNumbering?: unknown;
+  invoiceFooterNotes?: unknown[];
   instructors?: unknown[];
   blackouts?: unknown[];
   exportDate: string;
@@ -25,15 +70,33 @@ export interface SyncData {
 export const loadDataFromAzure = async (): Promise<SyncData | null> => {
   try {
     console.log('🔄 Cargando datos desde Azure Blob Storage...');
-    
-    const response = await fetch(AZURE_CONFIG.publicUrl, {
-      method: 'GET',
-      headers: {
-        'Cache-Control': 'no-cache'
-      }
-    });
 
-    if (response.ok) {
+    const AZURE_CONFIG = getEffectiveAzureConfig();
+    const urlsToTry: string[] = [];
+    if (AZURE_CONFIG.publicUrl) urlsToTry.push(AZURE_CONFIG.publicUrl);
+    // Si el blob es privado, el GET puede requerir SAS.
+    if (AZURE_CONFIG.blobUrlWithSas) urlsToTry.push(AZURE_CONFIG.blobUrlWithSas);
+
+    if (urlsToTry.length === 0) {
+      console.log('⚠️ Error inesperado: no se pudo obtener la configuración de Azure.');
+      return null;
+    }
+
+    console.log(`📍 Usando configuración ${AZURE_CONFIG.usingUserConfig ? 'personalizada' : 'predeterminada'} de Azure`);
+
+
+    let response: Response | null = null;
+    for (const url of urlsToTry) {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      if (response.ok) break;
+    }
+
+    if (response && response.ok) {
       const text = await response.text();
       const data = JSON.parse(text);
       console.log('✅ Datos cargados exitosamente desde Azure:', {
@@ -44,7 +107,7 @@ export const loadDataFromAzure = async (): Promise<SyncData | null> => {
       });
       return data;
     } else {
-      console.log('❌ Error cargando datos desde Azure:', response.status);
+      console.log('❌ Error cargando datos desde Azure:', response?.status);
       return null;
     }
   } catch (error) {
@@ -59,6 +122,14 @@ export const loadDataFromAzure = async (): Promise<SyncData | null> => {
 export const saveDataToAzure = async (data: SyncData): Promise<boolean> => {
   try {
     console.log('🔄 Guardando datos en Azure Blob Storage...');
+
+    const AZURE_CONFIG = getEffectiveAzureConfig();
+    if (!AZURE_CONFIG.blobUrlWithSas) {
+      console.log('⚠️ Error: no se pudo obtener URL con SAS para escritura.');
+      return false;
+    }
+
+    console.log(`📍 Guardando usando configuración ${AZURE_CONFIG.usingUserConfig ? 'personalizada' : 'predeterminada'} de Azure`);
     
     const jsonString = JSON.stringify(data, null, 2);
     
@@ -128,18 +199,28 @@ export const syncWithAzure = async (localData: SyncData): Promise<boolean> => {
  * Diagnosticar el estado de Azure Blob Storage
  */
 export const diagnoseBlobStorage = async (): Promise<void> => {
+  const AZURE_CONFIG = getEffectiveAzureConfig();
   console.log('🔍 === DIAGNÓSTICO DE AZURE BLOB STORAGE ===');
   console.log('📋 Configuración actual:', {
-    storageAccount: AZURE_CONFIG.storageAccount,
-    containerName: AZURE_CONFIG.containerName,
     blobName: AZURE_CONFIG.blobName,
     publicUrl: AZURE_CONFIG.publicUrl,
-    sasTokenPresent: AZURE_CONFIG.blobUrlWithSas ? 'Sí' : 'No'
+    sasTokenPresent: AZURE_CONFIG.blobUrlWithSas ? 'Sí' : 'No',
+    usingUserConfig: AZURE_CONFIG.usingUserConfig ? 'Sí' : 'No'
   });
+
+  if (!AZURE_CONFIG.publicUrl && !AZURE_CONFIG.blobUrlWithSas) {
+    console.log('⚠️ Azure no configurado. Configura Admin → Datos.');
+    return;
+  }
 
   // Test 1: Probar conexión con URL pública
   console.log('\n🔍 Test 1: Probando carga con URL pública...');
   try {
+    if (!AZURE_CONFIG.publicUrl) {
+      console.log('⚠️ Sin publicUrl, se omite test de lectura.');
+      return;
+    }
+
     const response = await fetch(AZURE_CONFIG.publicUrl, {
       method: 'GET',
       headers: {
@@ -168,6 +249,11 @@ export const diagnoseBlobStorage = async (): Promise<void> => {
   // Test 2: Probar escritura con SAS Token
   console.log('\n🔍 Test 2: Probando escritura con SAS Token...');
   try {
+    if (!AZURE_CONFIG.blobUrlWithSas) {
+      console.log('⚠️ Sin blobUrlWithSas, se omite test de escritura.');
+      return;
+    }
+
     const testData = {
       test: true,
       timestamp: new Date().toISOString(),
@@ -219,6 +305,7 @@ export const diagnoseBlobStorage = async (): Promise<void> => {
  * Diagnosticar específicamente el SAS Token de Azure Blob Storage
  */
 export const diagnoseSasToken = async (): Promise<void> => {
+  const AZURE_CONFIG = getEffectiveAzureConfig();
   console.log('🔍 === DIAGNÓSTICO DEL SAS TOKEN ===');
   
   // Verificar si el SAS Token está presente

@@ -29,7 +29,7 @@ npm run deploy
 npm run build
 
 # 2. Deploy
-swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410 --env production
+swa deploy ./dist --deployment-token $SWA_DEPLOYMENT_TOKEN --env production
 ```
 
 ## 🎯 Pasos Rápidos
@@ -42,7 +42,7 @@ swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7
 ## ⚠️ Importante Después del Deployment
 
 ### **Configura CORS para Azure Blob Storage:**
-1. Ve a **Azure Portal** → **Storage Account (cmfiles)** → **CORS**
+1. Ve a **Azure Portal** → **Storage Account (<account>)** → **CORS**
 2. Agrega tu nueva URL: `https://[tu-app].azurestaticapps.net`
 3. **Sin esto, la sincronización no funcionará**
 

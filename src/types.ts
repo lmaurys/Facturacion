@@ -4,7 +4,44 @@ export interface Item {
   unitPrice: number;
 }
 
-export type TransferOption = 'usa' | 'panama' | 'colombia';
+export type Currency = 'USD' | 'COP' | 'EUR';
+
+export type IssuerId = string;
+export type TransferOptionId = string;
+
+export interface IssuerProfile {
+  id: IssuerId;
+  label: string;
+  name: string;
+  nit: string;
+  address: string;
+  phone: string;
+  city: string;
+  email: string;
+  /**
+   * Logo del emisor. Preferible usar Data URL (data:image/...) para evitar problemas de CORS en PDF.
+   * Si usas URL remota, debe permitir CORS para que html2canvas pueda capturarla.
+   */
+  logoDataUrl?: string;
+  logoUrl?: string;
+}
+
+export interface TransferOptionProfile {
+  id: TransferOptionId;
+  label: string;
+  bankName: string;
+  bankAddress: string;
+  country: string;
+  swiftCode: string;
+  accountOwner: string;
+  accountNumber: {
+    es: string;
+    en: string;
+  };
+  accountOwnerAddress: string;
+  routingNumber?: string;
+  abaCode?: string;
+}
 
 export interface Invoice {
   clientName: string;
@@ -14,7 +51,8 @@ export interface Invoice {
   clientCity: string;
   items: Item[];
   total: number;
-  transferOption: TransferOption;
+  currency: Currency;
+  transferOptionId: TransferOptionId;
 }
 
 export interface Course {
@@ -25,6 +63,7 @@ export interface Course {
   hours: number;
   hourlyRate: number;
   totalValue: number;
+  currency: Currency;
   clientId: string; // Ahora referencia al ID del cliente
   instructorId: string; // Referencia al instructor que dicta el curso
   invoiceNumber: string;
@@ -52,21 +91,19 @@ export interface InvoiceFromCourse {
   courseIds: string[]; // Cursos incluidos en esta factura
   invoiceNumber: string;
   invoiceDate: string;
-  issuer: Issuer;
+  currency: Currency;
+  issuerId: IssuerId;
   language: Language;
   paymentTerms: number;
   subtotal: number;
   total: number;
   status: 'draft' | 'sent' | 'paid';
-  transferOption: TransferOption;
+  transferOptionId: TransferOptionId;
   observations?: string;
   paymentDate?: string; // Fecha en que se pagó la factura
   paidAmount?: number;  // Valor pagado de la factura
   items?: Item[];       // Items adicionales no asociados a cursos
 }
-
-export type Issuer = 'colombia' | 'usa';
-
 export type Language = 'es' | 'en';
 
 export interface Instructor {
@@ -83,28 +120,17 @@ export interface Blackout {
   type: 'personal' | 'holiday' | 'travel' | 'other';
 }
 
-export const issuers: Record<Issuer, {
-  name: string;
-  nit: string;
-  address: string;
-  phone: string;
-  city: string;
-  email: string;
-}> = {
-  colombia: {
-    name: 'LUIS ORLANDO MAURY SANCHEZ',
-    nit: 'NIT 79.744.795-7',
-    address: 'CARRERA 6 14-37 SUR CASA 105',
-    phone: '3176350333',
-    city: 'Mosquera - Colombia',
-    email: 'mauryorlando@hotmail.com'
-  },
-  usa: {
-    name: 'LUIS ORLANDO MAURY SANCHEZ',
-    nit: 'ITIN 978-99-9597',
-    address: '12019 Suellen Circle, 33414',
-    phone: '+1 4075297158',
-    city: 'Wellington, FL',
-    email: 'mauryorlando@hotmail.com'
-  }
-};
+export interface InvoiceNumberingSettings {
+  prefix: string;
+  startNumber: number;
+  nextNumber?: number;
+}
+
+export interface InvoiceFooterNote {
+  id: string;
+  effectiveFrom: string; // YYYY-MM-DD
+  es: string;
+  en: string;
+}
+
+export const supportedCurrencies: readonly Currency[] = ['USD', 'COP', 'EUR'] as const;

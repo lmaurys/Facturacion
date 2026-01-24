@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { InvoiceFromCourse, Client, Course, Instructor, TransferOption } from '../types';
-import { loadInvoices, loadClients, loadCourses, loadInstructors } from '../utils/storage';
+import {
+  InvoiceFromCourse,
+  Client,
+  Course,
+  Instructor,
+  Currency,
+  TransferOptionId,
+  TransferOptionProfile,
+  supportedCurrencies
+} from '../types';
+import { loadInvoices, loadClients, loadCourses, loadInstructors, loadTransferOptions } from '../utils/storage';
+import { formatCurrencyNoDecimals } from '../utils/numberUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, DollarSign, FileText, Users, Calendar, BarChart3, Eye } from 'lucide-react';
 import InvoiceViewer from './InvoiceViewer';
-import { transferOptions } from '../constants/invoiceConstants';
 
 interface AnalyticsData {
   monthlyRevenue: Array<{ month: string; paid: number; sent: number; draft: number; invoices: number }>;
@@ -32,7 +41,7 @@ interface AnalyticsData {
   }>;
 
   transferByDestination: Array<{
-    option: TransferOption;
+    option: TransferOptionId;
     label: string;
     received: number;
     expected: number;
@@ -50,6 +59,8 @@ const InvoiceAnalytics: React.FC = () => {
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('all');
   const [viewingInvoice, setViewingInvoice] = useState<InvoiceFromCourse | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency>('USD');
+  const [transferOptions, setTransferOptions] = useState<TransferOptionProfile[]>([]);
 
   useEffect(() => {
     loadData();
@@ -62,7 +73,9 @@ const InvoiceAnalytics: React.FC = () => {
   const processAnalytics = React.useCallback(() => {
     // Helper para formatear mes
     // Cursos del año y filtrado por instructor (si aplica)
-    const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
+    const yearCoursesAll = courses
+      .filter(course => getYear(course.startDate) === selectedYear)
+      .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
     const yearCourses = selectedInstructorId === 'all' 
       ? yearCoursesAll 
       : yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
@@ -70,7 +83,9 @@ const InvoiceAnalytics: React.FC = () => {
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
 
     // Facturas del año y filtradas por cursos del instructor (si aplica)
-    const yearInvoicesAll = invoices.filter(invoice => getYear(invoice.invoiceDate) === selectedYear);
+    const yearInvoicesAll = invoices
+      .filter(invoice => getYear(invoice.invoiceDate) === selectedYear)
+      .filter(invoice => (((invoice as any).currency || 'USD') as Currency) === selectedCurrency);
 
     // Fallback de relación: si una factura no tiene courseIds (factura tradicional), intentar inferir cursos
     // por invoiceNumber + clientId + año para que aparezca en filtro por instructor si corresponde.
@@ -248,17 +263,12 @@ const InvoiceAnalytics: React.FC = () => {
       .sort((a, b) => b.daysOverdue - a.daysOverdue);
 
     // 7. Discriminación por destino de transferencia
-    const transferMap = new Map<TransferOption, { received: number; expected: number; paidCount: number; openCount: number }>;
-    (Object.keys(transferOptions) as TransferOption[]).forEach(opt => {
-      transferMap.set(opt, { received: 0, expected: 0, paidCount: 0, openCount: 0 });
-    });
+    const transferLabelById = new Map<string, string>(transferOptions.map(t => [t.id, t.label]));
+    const transferMap = new Map<TransferOptionId, { received: number; expected: number; paidCount: number; openCount: number }>;
 
     yearInvoices.forEach(inv => {
-      const opt = (inv.transferOption || 'usa') as TransferOption;
-      if (!transferMap.has(opt)) {
-        transferMap.set(opt, { received: 0, expected: 0, paidCount: 0, openCount: 0 });
-      }
-      const agg = transferMap.get(opt)!;
+      const opt = (((inv as any).transferOptionId || (inv as any).transferOption || '') as TransferOptionId);
+      const agg = transferMap.get(opt) || { received: 0, expected: 0, paidCount: 0, openCount: 0 };
 
       if (inv.status === 'paid') {
         agg.received += (inv.paidAmount ?? inv.total);
@@ -268,12 +278,14 @@ const InvoiceAnalytics: React.FC = () => {
         agg.expected += inv.total;
         agg.openCount += 1;
       }
+
+      transferMap.set(opt, agg);
     });
 
-    const transferByDestination = (Array.from(transferMap.entries()) as Array<[TransferOption, { received: number; expected: number; paidCount: number; openCount: number }]> )
+    const transferByDestination = (Array.from(transferMap.entries()) as Array<[TransferOptionId, { received: number; expected: number; paidCount: number; openCount: number }]> )
       .map(([option, v]) => ({
         option,
-        label: transferOptions[option]?.name || option,
+        label: transferLabelById.get(option) || option,
         received: v.received,
         expected: v.expected,
         paidCount: v.paidCount,
@@ -291,7 +303,7 @@ const InvoiceAnalytics: React.FC = () => {
       overdueInvoices,
       transferByDestination
     });
-  }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, getYear, getMonthIndex]);
+  }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, selectedCurrency, transferOptions, getYear, getMonthIndex]);
 
   useEffect(() => {
     if (invoices.length > 0 && clients.length > 0 && courses.length > 0) {
@@ -301,20 +313,35 @@ const InvoiceAnalytics: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [loadedInvoices, loadedClients, loadedCourses, loadedInstructors] = await Promise.all([
+      const [loadedInvoices, loadedClients, loadedCourses, loadedInstructors, loadedTransferOptions] = await Promise.all([
         loadInvoices(),
         loadClients(),
         loadCourses(),
-        loadInstructors()
+        loadInstructors(),
+        loadTransferOptions()
       ]);
       setInvoices(loadedInvoices);
       setClients(loadedClients);
       setCourses(loadedCourses);
       setInstructors(loadedInstructors);
+      setTransferOptions(loadedTransferOptions);
     } catch (error) {
       console.error('Error loading analytics data:', error);
     }
   };
+
+  useEffect(() => {
+    const onTransferUpdated = async () => {
+      try {
+        const loadedTransferOptions = await loadTransferOptions();
+        setTransferOptions(loadedTransferOptions);
+      } catch (e) {
+        console.error('Error reloading transfer options:', e);
+      }
+    };
+    window.addEventListener('transferOptionUpdated', onTransferUpdated);
+    return () => window.removeEventListener('transferOptionUpdated', onTransferUpdated);
+  }, []);
 
   const handleViewOverdueInvoice = (invoiceId: string) => {
     const invoice = invoices.find(i => i.id === invoiceId);
@@ -332,13 +359,14 @@ const InvoiceAnalytics: React.FC = () => {
 
   const closeViewer = () => setViewingInvoice(null);
 
+  const formatMoney = React.useCallback(
+    (amount: number) => formatCurrencyNoDecimals(amount, selectedCurrency, 'es-CO', 1000),
+    [selectedCurrency]
+  );
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-ES', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
+  const formatPercent = React.useCallback((value: number) => {
+    return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(value);
+  }, []);
 
   const formatNumber = (value: number) => {
     return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(value);
@@ -350,18 +378,26 @@ const InvoiceAnalytics: React.FC = () => {
   };
 
   const getTotalInvoices = () => {
-  const yearInvoicesAll = invoices.filter(inv => getYear(inv.invoiceDate) === selectedYear);
+  const yearInvoicesAll = invoices
+    .filter(inv => getYear(inv.invoiceDate) === selectedYear)
+    .filter(inv => (((inv as any).currency || 'USD') as Currency) === selectedCurrency);
     if (selectedInstructorId === 'all') return yearInvoicesAll.length;
-  const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
+  const yearCoursesAll = courses
+    .filter(course => getYear(course.startDate) === selectedYear)
+    .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
     const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
     return yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id))).length;
   };
 
   const getUniqueClients = () => {
-  const yearInvoicesAll = invoices.filter(inv => getYear(inv.invoiceDate) === selectedYear);
+  const yearInvoicesAll = invoices
+    .filter(inv => getYear(inv.invoiceDate) === selectedYear)
+    .filter(inv => (((inv as any).currency || 'USD') as Currency) === selectedCurrency);
     if (selectedInstructorId === 'all') return new Set(yearInvoicesAll.map(inv => inv.clientId)).size;
-  const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
+  const yearCoursesAll = courses
+    .filter(course => getYear(course.startDate) === selectedYear)
+    .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
     const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
     const filteredInv = yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id)));
@@ -369,7 +405,9 @@ const InvoiceAnalytics: React.FC = () => {
   };
 
   const getTotalCourses = () => {
-  const yearCoursesAll = courses.filter(course => getYear(course.startDate) === selectedYear);
+  const yearCoursesAll = courses
+    .filter(course => getYear(course.startDate) === selectedYear)
+    .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
     if (selectedInstructorId === 'all') return yearCoursesAll.length;
     return yearCoursesAll.filter(c => c.instructorId === selectedInstructorId).length;
   };
@@ -377,6 +415,7 @@ const InvoiceAnalytics: React.FC = () => {
   const getExpectedBillingTotal = () => {
     const filtered = courses
       .filter(course => getYear(course.startDate) === selectedYear)
+      .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency)
       .filter(course => (selectedInstructorId === 'all') || course.instructorId === selectedInstructorId)
       .filter(course => course.status === 'creado' || course.status === 'dictado');
     return filtered.reduce((sum, course) => sum + course.totalValue, 0);
@@ -432,6 +471,17 @@ const InvoiceAnalytics: React.FC = () => {
                   <option key={year} value={year}>{year}</option>
                 ))}
               </select>
+              <label className="text-sm font-medium text-gray-700">Moneda:</label>
+              <select
+                value={selectedCurrency}
+                onChange={(e) => setSelectedCurrency(e.target.value as Currency)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Seleccionar moneda para análisis"
+              >
+                {supportedCurrencies.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
               <label className="text-sm font-medium text-gray-700">Instructor:</label>
               <select
                 value={selectedInstructorId}
@@ -453,7 +503,7 @@ const InvoiceAnalytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm">Ingresos Cobrados</p>
-                <p className="text-2xl font-bold">{formatCurrency(getPaidRevenue())}</p>
+                <p className="text-2xl font-bold">{formatMoney(getPaidRevenue())}</p>
               </div>
               <DollarSign size={32} className="text-green-200" />
             </div>
@@ -493,7 +543,7 @@ const InvoiceAnalytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-amber-100 text-sm">Facturación Esperada</p>
-                <p className="text-2xl font-bold">{formatCurrency(getExpectedBillingTotal())}</p>
+                <p className="text-2xl font-bold">{formatMoney(getExpectedBillingTotal())}</p>
               </div>
               <TrendingUp size={32} className="text-amber-200" />
             </div>
@@ -524,7 +574,7 @@ const InvoiceAnalytics: React.FC = () => {
                 <tr key={row.instructor}>
                   <td className="px-3 py-2 text-sm text-gray-900">{row.instructor}</td>
                   <td className="px-3 py-2 text-sm text-right">{formatNumber(row.courses)}</td>
-                  <td className="px-3 py-2 text-sm text-right">{formatCurrency(row.totalValue)}</td>
+                  <td className="px-3 py-2 text-sm text-right">{formatMoney(row.totalValue)}</td>
                   <td className="px-3 py-2 text-sm text-right">{formatNumber(row.paidCourses)}</td>
                   <td className="px-3 py-2 text-sm text-right">{formatNumber(row.billedCourses)}</td>
                   <td className="px-3 py-2 text-sm text-right">{formatNumber(row.plannedCourses)}</td>
@@ -543,17 +593,20 @@ const InvoiceAnalytics: React.FC = () => {
         <div className="bg-white shadow-md rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Facturación Mensual {selectedYear}</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analytics.monthlyRevenue}>
+            <BarChart
+              data={analytics.monthlyRevenue}
+              margin={{ top: 8, right: 12, left: 28, bottom: 8 }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis tickFormatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} />
+              <YAxis width={110} tickMargin={8} tickFormatter={(value) => formatMoney(Number(value))} />
               <Tooltip formatter={(value, name) => {
                 const nameMap: Record<string, string> = {
                   'paid': 'Pagadas',
                   'sent': 'Enviadas', 
                   'draft': 'Borradores'
                 };
-                return [formatCurrency(Number(value)), nameMap[name] || name];
+                return [formatMoney(Number(value)), nameMap[name] || name];
               }} />
               <Legend 
                 formatter={(value) => {
@@ -582,15 +635,15 @@ const InvoiceAnalytics: React.FC = () => {
                 <>
                   <div className="bg-green-50 border border-green-200 rounded p-3">
                     <div className="text-green-700 font-medium">Total Pagadas</div>
-                    <div className="text-green-800 font-bold">{formatCurrency(totals.paid)}</div>
+                    <div className="text-green-800 font-bold">{formatMoney(totals.paid)}</div>
                   </div>
                   <div className="bg-blue-50 border border-blue-200 rounded p-3">
                     <div className="text-blue-700 font-medium">Total Enviadas</div>
-                    <div className="text-blue-800 font-bold">{formatCurrency(totals.sent)}</div>
+                    <div className="text-blue-800 font-bold">{formatMoney(totals.sent)}</div>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded p-3">
                     <div className="text-gray-700 font-medium">Total Borradores</div>
-                    <div className="text-gray-800 font-bold">{formatCurrency(totals.draft)}</div>
+                    <div className="text-gray-800 font-bold">{formatMoney(totals.draft)}</div>
                   </div>
                 </>
               );
@@ -602,11 +655,14 @@ const InvoiceAnalytics: React.FC = () => {
         <div className="bg-white shadow-md rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Valor de Cursos por Mes {selectedYear}</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analytics.monthlyCoursesCreated}>
+            <BarChart
+              data={analytics.monthlyCoursesCreated}
+              margin={{ top: 8, right: 12, left: 28, bottom: 8 }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis tickFormatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} />
-              <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Valor Total']} />
+              <YAxis width={110} tickMargin={8} tickFormatter={(value) => formatMoney(Number(value))} />
+              <Tooltip formatter={(value) => [formatMoney(Number(value)), 'Valor Total']} />
               <Legend formatter={() => 'Valor Total'} />
               <Bar dataKey="totalValue" fill="#F59E0B" />
             </BarChart>
@@ -625,7 +681,7 @@ const InvoiceAnalytics: React.FC = () => {
                     <p className="text-sm text-gray-600">{formatNumber(status.count)} curso(s)</p>
                   </div>
                 </div>
-                <p className="font-bold text-gray-900">{formatCurrency(status.value)}</p>
+                <p className="font-bold text-gray-900">{formatMoney(status.value)}</p>
               </div>
             ))}
             {analytics.coursesStatusDistribution.length === 0 && (
@@ -659,7 +715,7 @@ const InvoiceAnalytics: React.FC = () => {
                   <tr key={index} className="hover:bg-red-50">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.invoiceNumber}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{invoice.clientName}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{formatCurrency(invoice.amount)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{formatMoney(invoice.amount)}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{new Date(invoice.dueDate).toLocaleDateString('es-ES')}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
@@ -713,8 +769,8 @@ const InvoiceAnalytics: React.FC = () => {
                 {analytics.transferByDestination.map((row) => (
                   <tr key={row.option} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-900">{row.label}</td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold text-green-700">{formatCurrency(row.received)}</td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold text-amber-700">{formatCurrency(row.expected)}</td>
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-green-700">{formatMoney(row.received)}</td>
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-amber-700">{formatMoney(row.expected)}</td>
                     <td className="px-4 py-3 text-sm text-right text-gray-700">
                       {formatNumber(row.paidCount + row.openCount)}
                     </td>
@@ -749,12 +805,12 @@ const InvoiceAnalytics: React.FC = () => {
                   <h4 className="font-semibold text-gray-900 text-lg">{client.name}</h4>
                   <div className="flex items-center space-x-4 text-sm text-gray-600">
                     <span>{formatNumber(client.invoices)} factura(s)</span>
-                    <span className="font-bold text-xl text-gray-900">{formatCurrency(client.total)}</span>
+                    <span className="font-bold text-xl text-gray-900">{formatMoney(client.total)}</span>
                   </div>
             {client.expectedBilling > 0 && (
               <div className="mt-1 text-xs">
                 <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  Esperada: {formatCurrency(client.expectedBilling)}
+                  Esperada: {formatMoney(client.expectedBilling)}
                 </span>
               </div>
             )}
@@ -766,22 +822,22 @@ const InvoiceAnalytics: React.FC = () => {
                   {client.paid > 0 && (
                     <div className="bg-green-50 p-2 rounded text-center">
                       <div className="font-medium text-green-800">Pagadas</div>
-                      <div className="text-green-600">{formatCurrency(client.paid)}</div>
-                      <div className="text-green-500">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(getStatusPercentage(client.paid, client.total))}%</div>
+                      <div className="text-green-600">{formatMoney(client.paid)}</div>
+                      <div className="text-green-500">{formatPercent(getStatusPercentage(client.paid, client.total))}%</div>
                     </div>
                   )}
                   {client.sent > 0 && (
                     <div className="bg-blue-50 p-2 rounded text-center">
                       <div className="font-medium text-blue-800">Enviadas</div>
-                      <div className="text-blue-600">{formatCurrency(client.sent)}</div>
-                      <div className="text-blue-500">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(getStatusPercentage(client.sent, client.total))}%</div>
+                      <div className="text-blue-600">{formatMoney(client.sent)}</div>
+                      <div className="text-blue-500">{formatPercent(getStatusPercentage(client.sent, client.total))}%</div>
                     </div>
                   )}
                   {client.draft > 0 && (
                     <div className="bg-gray-50 p-2 rounded text-center">
                       <div className="font-medium text-gray-800">Borradores</div>
-                      <div className="text-gray-600">{formatCurrency(client.draft)}</div>
-                      <div className="text-gray-500">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(getStatusPercentage(client.draft, client.total))}%</div>
+                      <div className="text-gray-600">{formatMoney(client.draft)}</div>
+                      <div className="text-gray-500">{formatPercent(getStatusPercentage(client.draft, client.total))}%</div>
                     </div>
                   )}
                 </div>

@@ -1,5 +1,60 @@
-import { Course, Client, InvoiceFromCourse, Blackout, Instructor, Item } from '../types';
+import { Course, Client, InvoiceFromCourse, Blackout, Instructor, Item, IssuerProfile, TransferOptionProfile, Currency, InvoiceNumberingSettings, InvoiceFooterNote, Language } from '../types';
 import { loadDataFromAzure, saveDataToAzure } from './azureBlobSync';
+import { getAzureBlobConfig, setAzureBlobConfig } from './azureBlobConfig';
+
+const defaultInvoiceNumberingSettings: InvoiceNumberingSettings = {
+  prefix: '',
+  startNumber: 1,
+  nextNumber: 1
+};
+
+const normalizeInvoiceNumberingSettings = (raw: unknown): InvoiceNumberingSettings => {
+  const obj = (raw || {}) as Partial<InvoiceNumberingSettings>;
+  const prefix = (typeof obj.prefix === 'string' ? obj.prefix : defaultInvoiceNumberingSettings.prefix).trim();
+  const startNumberRaw = (obj as any).startNumber;
+  const startNumberNum = typeof startNumberRaw === 'number' ? startNumberRaw : Number(startNumberRaw);
+  const startNumber = Number.isFinite(startNumberNum) && startNumberNum >= 1
+    ? Math.floor(startNumberNum)
+    : defaultInvoiceNumberingSettings.startNumber;
+
+  const nextNumberRaw = (obj as any).nextNumber;
+  const nextNumberNum = typeof nextNumberRaw === 'number' ? nextNumberRaw : Number(nextNumberRaw);
+  const nextNumber = Number.isFinite(nextNumberNum) && nextNumberNum >= 1
+    ? Math.floor(nextNumberNum)
+    : startNumber;
+  return {
+    prefix: prefix || defaultInvoiceNumberingSettings.prefix,
+    startNumber,
+    nextNumber
+  };
+};
+
+const normalizeDateYYYYMMDD = (value: unknown, fallback: string): string => {
+  if (typeof value !== 'string') return fallback;
+  const v = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : fallback;
+};
+
+const normalizeInvoiceFooterNotes = (raw: unknown): InvoiceFooterNote[] => {
+  const arr = Array.isArray(raw) ? raw : [];
+  const normalized = arr
+    .map((n: any, idx: number) => {
+      const id = typeof n?.id === 'string' && n.id.trim() ? n.id.trim() : `footer_${Date.now()}_${idx}`;
+      const effectiveFrom = normalizeDateYYYYMMDD(n?.effectiveFrom, '1970-01-01');
+      const es = typeof n?.es === 'string' ? n.es : '';
+      const en = typeof n?.en === 'string' ? n.en : '';
+      return { id, effectiveFrom, es, en } as InvoiceFooterNote;
+    })
+    .filter(n => (n.es || n.en) && n.effectiveFrom);
+
+  if (normalized.length === 0) return [];
+
+  // Orden ascendente por fecha
+  normalized.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  return normalized;
+};
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Azure como única fuente de verdad
 let localDataCache: {
@@ -8,6 +63,10 @@ let localDataCache: {
   invoices: InvoiceFromCourse[];
   instructors: Instructor[];
   blackouts: Blackout[];
+  issuerProfiles: IssuerProfile[];
+  transferOptions: TransferOptionProfile[];
+  invoiceNumbering: InvoiceNumberingSettings;
+  invoiceFooterNotes: InvoiceFooterNote[];
   lastUpdate: string;
   isInitialized: boolean;
 } = {
@@ -16,8 +75,100 @@ let localDataCache: {
   invoices: [],
   instructors: [],
   blackouts: [],
+  issuerProfiles: [],
+  transferOptions: [],
+  invoiceNumbering: { ...defaultInvoiceNumberingSettings },
+  invoiceFooterNotes: [],
   lastUpdate: new Date().toISOString(),
   isInitialized: false
+};
+
+type ProtectedSectionKey = 'issuerProfiles' | 'transferOptions' | 'invoiceNumbering' | 'invoiceFooterNotes';
+
+// Para evitar pérdida de datos: solo sobreescribimos estas secciones si fueron editadas en esta sesión.
+let hasLoadedRemoteOnce = false;
+const dirtyProtectedSections: Record<ProtectedSectionKey, boolean> = {
+  issuerProfiles: false,
+  transferOptions: false,
+  invoiceNumbering: false,
+  invoiceFooterNotes: false
+};
+
+const markProtectedSectionDirty = (key: ProtectedSectionKey): void => {
+  dirtyProtectedSections[key] = true;
+};
+
+const resetProtectedSectionDirtyFlags = (): void => {
+  (Object.keys(dirtyProtectedSections) as ProtectedSectionKey[]).forEach((k) => {
+    dirtyProtectedSections[k] = false;
+  });
+};
+
+const buildDataToSync = async (): Promise<{
+  courses: Course[];
+  clients: Client[];
+  invoices: InvoiceFromCourse[];
+  azureBlobConfig?: any;
+  instructors: Instructor[];
+  blackouts: Blackout[];
+  issuerProfiles: IssuerProfile[];
+  transferOptions: TransferOptionProfile[];
+  invoiceNumbering: InvoiceNumberingSettings;
+  invoiceFooterNotes: InvoiceFooterNote[];
+  exportDate: string;
+  version: number;
+} | null> => {
+  const azureBlobConfig = getAzureBlobConfig() ?? undefined;
+
+  // Intentar leer el remoto para preservar secciones protegidas cuando NO fueron tocadas.
+  // Si nunca se logró leer remoto y ahora tampoco se puede, abortamos para no sobrescribir y perder datos.
+  let remote: any | null = null;
+  try {
+    remote = await loadDataFromAzure();
+  } catch {
+    remote = null;
+  }
+
+  if (!remote && !hasLoadedRemoteOnce) {
+    console.warn('⚠️ No se pudo leer el JSON remoto (y nunca se ha leído antes). Se cancela el guardado para evitar pérdida de issuerProfiles/invoiceNumbering/invoiceFooterNotes.');
+    return null;
+  }
+
+  const remoteIssuerProfiles = ((remote as any)?.issuerProfiles || (remote as any)?.issuers) as unknown;
+  const remoteTransferOptions = ((remote as any)?.transferOptions || (remote as any)?.transferOptionProfiles) as unknown;
+  const remoteInvoiceNumbering = (remote as any)?.invoiceNumbering as unknown;
+  const remoteInvoiceFooterNotes = (remote as any)?.invoiceFooterNotes as unknown;
+
+  const issuerProfiles = dirtyProtectedSections.issuerProfiles
+    ? localDataCache.issuerProfiles
+    : (Array.isArray(remoteIssuerProfiles) ? (remoteIssuerProfiles as IssuerProfile[]) : localDataCache.issuerProfiles);
+
+  const transferOptions = dirtyProtectedSections.transferOptions
+    ? localDataCache.transferOptions
+    : (Array.isArray(remoteTransferOptions) ? (remoteTransferOptions as TransferOptionProfile[]) : localDataCache.transferOptions);
+
+  const invoiceNumbering = dirtyProtectedSections.invoiceNumbering
+    ? normalizeInvoiceNumberingSettings(localDataCache.invoiceNumbering)
+    : normalizeInvoiceNumberingSettings(remoteInvoiceNumbering ?? localDataCache.invoiceNumbering);
+
+  const invoiceFooterNotes = dirtyProtectedSections.invoiceFooterNotes
+    ? normalizeInvoiceFooterNotes(localDataCache.invoiceFooterNotes)
+    : normalizeInvoiceFooterNotes(remoteInvoiceFooterNotes ?? localDataCache.invoiceFooterNotes);
+
+  return {
+    courses: localDataCache.courses,
+    clients: localDataCache.clients,
+    invoices: localDataCache.invoices,
+    azureBlobConfig,
+    instructors: localDataCache.instructors,
+    blackouts: localDataCache.blackouts,
+    issuerProfiles,
+    transferOptions,
+    invoiceNumbering,
+    invoiceFooterNotes,
+    exportDate: new Date().toISOString(),
+    version: 3
+  };
 };
 
 // Eventos para notificar a la UI
@@ -31,16 +182,12 @@ const dispatchSyncEvent = (type: 'start' | 'success' | 'error') => {
 export const forceSaveToAzure = async (): Promise<boolean> => {
   try {
     console.log('🚨 FORZANDO GUARDADO INMEDIATO A AZURE...');
-    
-    const dataToSync = {
-      courses: localDataCache.courses,
-      clients: localDataCache.clients,
-      invoices: localDataCache.invoices,
-      instructors: localDataCache.instructors,
-      blackouts: localDataCache.blackouts,
-      exportDate: new Date().toISOString(),
-      version: 2
-    };
+
+    const dataToSync = await buildDataToSync();
+    if (!dataToSync) {
+      console.log('❌ Guardado cancelado para evitar pérdida de datos protegidos');
+      return false;
+    }
 
     console.log('📊 Datos a guardar forzadamente:', {
       coursesCount: dataToSync.courses.length,
@@ -52,6 +199,7 @@ export const forceSaveToAzure = async (): Promise<boolean> => {
     
     if (success) {
       localDataCache.lastUpdate = new Date().toISOString();
+      resetProtectedSectionDirtyFlags();
       console.log('✅ GUARDADO FORZADO EXITOSO');
       return true;
     } else {
@@ -93,18 +241,12 @@ const autoSyncAfterChange = async () => {
       console.log('❌ Sincronización automática falló, intentando método alternativo...');
       // Intentar método alternativo
       const { saveDataToAzure } = await import('./azureBlobSync');
-      const altSuccess = await saveDataToAzure({
-        courses: localDataCache.courses,
-        clients: localDataCache.clients,
-        invoices: localDataCache.invoices,
-        instructors: localDataCache.instructors,
-        blackouts: localDataCache.blackouts,
-        exportDate: new Date().toISOString(),
-        version: 2
-      });
+      const dataToSync = await buildDataToSync();
+      const altSuccess = dataToSync ? await saveDataToAzure(dataToSync) : false;
       
       if (altSuccess) {
         dispatchSyncEvent('success');
+        resetProtectedSectionDirtyFlags();
         console.log('✅ Sincronización alternativa exitosa');
       } else {
         dispatchSyncEvent('error');
@@ -256,15 +398,19 @@ const normalizeInvoiceItem = (item: Item): Item => {
 };
 
 const normalizeInvoiceRecord = (invoice: InvoiceFromCourse): InvoiceFromCourse => {
+  const raw = invoice as unknown as any;
   const normalizedItems = Array.isArray(invoice.items)
     ? invoice.items.map(normalizeInvoiceItem)
     : [];
 
   return {
-    ...invoice,
-    courseIds: Array.isArray(invoice.courseIds) ? invoice.courseIds : [],
-    items: normalizedItems
-  };
+    ...raw,
+    courseIds: Array.isArray(raw.courseIds) ? raw.courseIds : [],
+    items: normalizedItems,
+    currency: (raw.currency || 'USD') as Currency,
+    issuerId: (raw.issuerId || raw.issuer || '') as string,
+    transferOptionId: (raw.transferOptionId || raw.transferOption || '') as string
+  } as InvoiceFromCourse;
 };
 
 // Cargar datos iniciales desde Azure
@@ -274,9 +420,24 @@ export const initializeFromAzure = async (): Promise<boolean> => {
     console.log('📍 PASO 1: Iniciando carga desde Azure');
     dispatchSyncEvent('start');
     
-    const azureData = await loadDataFromAzure();
+    let azureData = await loadDataFromAzure();
     
   if (azureData) {
+      // Aprender la config de conexión desde el mismo JSON remoto (cross-device)
+      try {
+        const maybeCfg = (azureData as any).azureBlobConfig as
+          | { publicUrl?: string; blobUrlWithSas?: string }
+          | undefined;
+        if (maybeCfg && (maybeCfg.publicUrl || maybeCfg.blobUrlWithSas)) {
+          setAzureBlobConfig({
+            publicUrl: maybeCfg.publicUrl,
+            blobUrlWithSas: maybeCfg.blobUrlWithSas
+          });
+        }
+      } catch {
+        // noop
+      }
+
       console.log('📍 PASO 2: Datos recibidos desde Azure');
       console.log('📊 DATOS BRUTOS RECIBIDOS DE AZURE:', {
         courses: azureData.courses?.length || 0,
@@ -337,29 +498,34 @@ export const initializeFromAzure = async (): Promise<boolean> => {
       });
       
       console.log('📍 PASO 4: Actualizando cache local');
-      // Instructores y backfill
-      let instructors: Instructor[] = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
-      const defaultInstructorName = 'Luis Maury';
-      let defaultInstructor = instructors.find(i => i.name === defaultInstructorName);
-      if (!defaultInstructor) {
-        defaultInstructor = { id: generateInstructorId(), name: defaultInstructorName, active: true };
-        instructors = [defaultInstructor, ...instructors];
-      }
+      // Instructores (sin backfill con datos hardcodeados)
+      const instructors: Instructor[] = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
 
       const coursesWithInstructor: Course[] = (uniqueCoursesRaw as Course[]).map((c: Course) => ({
         ...c,
-        instructorId: c.instructorId || defaultInstructor!.id
+        currency: (c.currency || 'USD') as Currency
       }));
+
+      const issuerProfiles = (((azureData as any).issuerProfiles || (azureData as any).issuers) as IssuerProfile[] | undefined);
+      const transferOptions = (((azureData as any).transferOptions || (azureData as any).transferOptionProfiles) as TransferOptionProfile[] | undefined);
+      const invoiceNumbering = normalizeInvoiceNumberingSettings((azureData as any).invoiceNumbering);
+      const invoiceFooterNotes = normalizeInvoiceFooterNotes((azureData as any).invoiceFooterNotes);
 
       localDataCache = {
         courses: coursesWithInstructor,
         clients: uniqueClients,
-  invoices: normalizedInvoices,
+        invoices: normalizedInvoices,
         instructors,
         blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
+        issuerProfiles: Array.isArray(issuerProfiles) ? issuerProfiles : [],
+        transferOptions: Array.isArray(transferOptions) ? transferOptions : [],
+        invoiceNumbering,
+        invoiceFooterNotes,
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
+
+      hasLoadedRemoteOnce = true;
       
       console.log('📍 PASO 5: Cache actualizado');
       dispatchSyncEvent('success');
@@ -387,6 +553,10 @@ export const initializeFromAzure = async (): Promise<boolean> => {
         invoices: [],
         instructors: [],
         blackouts: [],
+        issuerProfiles: [],
+        transferOptions: [],
+        invoiceNumbering: { ...defaultInvoiceNumberingSettings },
+        invoiceFooterNotes: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: true
       };
@@ -407,6 +577,10 @@ export const initializeFromAzure = async (): Promise<boolean> => {
       invoices: [],
       instructors: [],
       blackouts: [],
+      issuerProfiles: [],
+      transferOptions: [],
+      invoiceNumbering: { ...defaultInvoiceNumberingSettings },
+      invoiceFooterNotes: [],
       lastUpdate: new Date().toISOString(),
       isInitialized: true
     };
@@ -428,23 +602,30 @@ export const emergencyLoadFromAzure = async (): Promise<boolean> => {
       // Cargar TODO tal cual pero garantizando tipos y backfill de instructor
       const courses = ((azureData.courses || []) as unknown as Course[]).map((c) => ({
         ...c,
-        instructorId: c.instructorId || 'default_instructor'
+        currency: (c.currency || 'USD') as Currency
       }));
       const clients = (azureData.clients || []) as unknown as Client[];
-  const invoices = ((azureData.invoices || []) as unknown as InvoiceFromCourse[]).map(normalizeInvoiceRecord);
-      let instructors = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
-      if (!instructors.find(i => i.id === 'default_instructor')) {
-        instructors = [{ id: 'default_instructor', name: 'Luis Maury', active: true }, ...instructors];
-      }
+      const invoices = ((azureData.invoices || []) as unknown as InvoiceFromCourse[]).map(normalizeInvoiceRecord);
+      const instructors = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
+      const issuerProfiles = (((azureData as any).issuerProfiles || (azureData as any).issuers) as IssuerProfile[] | undefined);
+      const transferOptions = (((azureData as any).transferOptions || (azureData as any).transferOptionProfiles) as TransferOptionProfile[] | undefined);
+      const invoiceNumbering = normalizeInvoiceNumberingSettings((azureData as any).invoiceNumbering);
+      const invoiceFooterNotes = normalizeInvoiceFooterNotes((azureData as any).invoiceFooterNotes);
       localDataCache = {
         courses,
         clients,
         invoices,
         instructors,
         blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
+        issuerProfiles: Array.isArray(issuerProfiles) ? issuerProfiles : [],
+        transferOptions: Array.isArray(transferOptions) ? transferOptions : [],
+        invoiceNumbering,
+        invoiceFooterNotes,
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
+
+      hasLoadedRemoteOnce = true;
       
       console.log('🚨 DATOS DE EMERGENCIA CARGADOS:', {
         courses: localDataCache.courses.length,
@@ -499,21 +680,30 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
       // CARGAR EXACTAMENTE LO QUE ESTÁ EN AZURE - SIN FILTROS (con tipado y backfill mínimo de instructor)
       const rawCourses = (azureData.courses || []) as unknown as Course[];
       let instructors = ((azureData as { instructors?: Instructor[] }).instructors || []) as Instructor[];
-      // Asegurar instructor por defecto
-      if (!instructors.find(i => i.name === 'Luis Maury')) {
-        instructors = [{ id: 'default_instructor', name: 'Luis Maury', active: true }, ...instructors];
-      }
-      const defaultInstructorId = (instructors.find(i => i.name === 'Luis Maury')?.id) || 'default_instructor';
-      const coursesBackfilled = rawCourses.map(c => ({ ...c, instructorId: c.instructorId || defaultInstructorId }));
+      const coursesBackfilled = rawCourses.map(c => ({
+        ...c,
+        currency: ((c as any).currency || 'USD') as Currency
+      }));
+
+      const issuerProfiles = (((azureData as any).issuerProfiles || (azureData as any).issuers) as IssuerProfile[] | undefined);
+      const transferOptions = (((azureData as any).transferOptions || (azureData as any).transferOptionProfiles) as TransferOptionProfile[] | undefined);
+      const invoiceNumbering = normalizeInvoiceNumberingSettings((azureData as any).invoiceNumbering);
+      const invoiceFooterNotes = normalizeInvoiceFooterNotes((azureData as any).invoiceFooterNotes);
       localDataCache = {
         courses: coursesBackfilled,
         clients: (azureData.clients || []) as unknown as Client[],
-  invoices: ((azureData.invoices || []) as unknown as InvoiceFromCourse[]).map(normalizeInvoiceRecord),
+        invoices: ((azureData.invoices || []) as unknown as InvoiceFromCourse[]).map(normalizeInvoiceRecord),
         instructors,
         blackouts: ((azureData as { blackouts?: Blackout[] }).blackouts || []),
+        issuerProfiles: Array.isArray(issuerProfiles) ? issuerProfiles : [],
+        transferOptions: Array.isArray(transferOptions) ? transferOptions : [],
+        invoiceNumbering,
+        invoiceFooterNotes,
         lastUpdate: azureData.exportDate || new Date().toISOString(),
         isInitialized: true
       };
+
+      hasLoadedRemoteOnce = true;
       
       console.log('📍 PASO 4: Cache actualizado con datos crudos');
       dispatchSyncEvent('success');
@@ -569,6 +759,10 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
         invoices: [],
         instructors: [],
         blackouts: [],
+        issuerProfiles: [],
+        transferOptions: [],
+        invoiceNumbering: { ...defaultInvoiceNumberingSettings },
+        invoiceFooterNotes: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: true
       };
@@ -588,6 +782,10 @@ export const loadOnlyRealDataFromAzure = async (): Promise<boolean> => {
       invoices: [],
       instructors: [],
       blackouts: [],
+      issuerProfiles: [],
+      transferOptions: [],
+      invoiceNumbering: { ...defaultInvoiceNumberingSettings },
+      invoiceFooterNotes: [],
       lastUpdate: new Date().toISOString(),
       isInitialized: true
     };
@@ -968,8 +1166,8 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
     
     console.log('📋 Factura original:', localDataCache.invoices[invoiceIndex]);
     console.log('🔍 Cambio en emisor:', {
-      original: localDataCache.invoices[invoiceIndex].issuer,
-      nuevo: invoiceData.issuer
+      original: localDataCache.invoices[invoiceIndex].issuerId,
+      nuevo: (invoiceData as any).issuerId
     });
     
     const updatedInvoice: InvoiceFromCourse = normalizeInvoiceRecord({
@@ -979,13 +1177,13 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
     });
     
     console.log('✏️ Factura actualizada a guardar:', updatedInvoice);
-    console.log('🔍 Verificando emisor en factura actualizada:', updatedInvoice.issuer);
+    console.log('🔍 Verificando emisor en factura actualizada:', updatedInvoice.issuerId);
     
     // Actualizar en cache local
     localDataCache.invoices[invoiceIndex] = updatedInvoice;
     
     console.log('✅ Factura actualizada en cache local');
-    console.log('🔍 Verificando emisor en cache después de actualizar:', localDataCache.invoices[invoiceIndex].issuer);
+    console.log('🔍 Verificando emisor en cache después de actualizar:', localDataCache.invoices[invoiceIndex].issuerId);
     
     // Sincronizar automáticamente con Azure
     console.log('🔄 Iniciando sincronización con Azure...');
@@ -1006,8 +1204,10 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
           invoices: localDataCache.invoices,
           instructors: localDataCache.instructors,
           blackouts: localDataCache.blackouts,
+          issuerProfiles: localDataCache.issuerProfiles,
+          transferOptions: localDataCache.transferOptions,
           exportDate: new Date().toISOString(),
-          version: 2
+          version: 3
         });
         
         if (altSuccess) {
@@ -1020,7 +1220,7 @@ export const updateInvoice = async (invoiceId: string, invoiceData: Omit<Invoice
       }
     }
     
-    console.log('🎯 Retornando factura actualizada con emisor:', updatedInvoice.issuer);
+    console.log('🎯 Retornando factura actualizada con emisor:', updatedInvoice.issuerId);
     
     return updatedInvoice;
   } catch (error) {
@@ -1163,25 +1363,352 @@ export const deleteInstructor = async (instructorId: string): Promise<{ removed:
   }
 };
 
-export const getNextInvoiceNumber = async (): Promise<string> => {
-  const invoices = localDataCache.invoices;
-  
-  if (invoices.length === 0) {
-    return 'LP101';
-  }
+// ========================= ISSUERS =========================
 
-  const invoiceNumbers = invoices
-    .map(invoice => invoice.invoiceNumber)
-    .filter(num => num && num.startsWith('LP'))
-    .map(num => parseInt(num.substring(2)))
+export const generateIssuerId = (): string => {
+  return `issuer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+export const loadIssuerProfiles = async (): Promise<IssuerProfile[]> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
+  }
+  return localDataCache.issuerProfiles;
+};
+
+export const addIssuerProfile = async (data: Omit<IssuerProfile, 'id'> & { id?: string }): Promise<IssuerProfile | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+
+    const id = (data.id || '').trim() || generateIssuerId();
+    const label = data.label.trim();
+    if (!label) return null;
+    if (localDataCache.issuerProfiles.some(p => p.id === id)) {
+      console.warn('⚠️ Issuer duplicado por id:', id);
+      return null;
+    }
+
+    const profile: IssuerProfile = {
+      id,
+      label,
+      name: data.name,
+      nit: data.nit,
+      address: data.address,
+      phone: data.phone,
+      city: data.city,
+      email: data.email
+    };
+    markProtectedSectionDirty('issuerProfiles');
+    localDataCache.issuerProfiles.push(profile);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar emisor, queda en cache local');
+    window.dispatchEvent(new CustomEvent('issuerUpdated'));
+    return profile;
+  } catch (e) {
+    console.error('❌ Error agregando emisor:', e);
+    return null;
+  }
+};
+
+export const updateIssuerProfile = async (issuerId: string, data: Omit<IssuerProfile, 'id'>): Promise<IssuerProfile | null> => {
+  try {
+    const idx = localDataCache.issuerProfiles.findIndex(p => p.id === issuerId);
+    if (idx === -1) return null;
+    const updated: IssuerProfile = { ...localDataCache.issuerProfiles[idx], ...data, id: issuerId };
+    markProtectedSectionDirty('issuerProfiles');
+    localDataCache.issuerProfiles[idx] = updated;
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar actualización de emisor');
+    window.dispatchEvent(new CustomEvent('issuerUpdated'));
+    return updated;
+  } catch (e) {
+    console.error('❌ Error actualizando emisor:', e);
+    return null;
+  }
+};
+
+export const deleteIssuerProfile = async (issuerId: string): Promise<{ removed: boolean; reason?: string }> => {
+  try {
+    if (localDataCache.invoices.some(inv => inv.issuerId === issuerId)) {
+      return { removed: false, reason: 'in-use' };
+    }
+    const before = localDataCache.issuerProfiles.length;
+    markProtectedSectionDirty('issuerProfiles');
+    localDataCache.issuerProfiles = localDataCache.issuerProfiles.filter(p => p.id !== issuerId);
+    if (localDataCache.issuerProfiles.length === before) return { removed: false, reason: 'not-found' };
+    await forceSaveToAzure();
+    window.dispatchEvent(new CustomEvent('issuerUpdated'));
+    return { removed: true };
+  } catch (e) {
+    console.error('❌ Error eliminando emisor:', e);
+    return { removed: false, reason: 'error' };
+  }
+};
+
+// ========================= TRANSFER OPTIONS =========================
+
+export const generateTransferOptionId = (): string => {
+  return `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+export const loadTransferOptions = async (): Promise<TransferOptionProfile[]> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
+  }
+  return localDataCache.transferOptions;
+};
+
+export const addTransferOption = async (data: Omit<TransferOptionProfile, 'id'> & { id?: string }): Promise<TransferOptionProfile | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+
+    const id = (data.id || '').trim() || generateTransferOptionId();
+    const label = data.label.trim();
+    if (!label) return null;
+    if (localDataCache.transferOptions.some(p => p.id === id)) {
+      console.warn('⚠️ Transfer duplicado por id:', id);
+      return null;
+    }
+
+    const profile: TransferOptionProfile = {
+      id,
+      label,
+      bankName: data.bankName,
+      bankAddress: data.bankAddress,
+      country: data.country,
+      swiftCode: data.swiftCode,
+      accountOwner: data.accountOwner,
+      accountNumber: data.accountNumber,
+      accountOwnerAddress: data.accountOwnerAddress,
+      routingNumber: data.routingNumber,
+      abaCode: data.abaCode
+    };
+    markProtectedSectionDirty('transferOptions');
+    localDataCache.transferOptions.push(profile);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar transferencia, queda en cache local');
+    window.dispatchEvent(new CustomEvent('transferOptionUpdated'));
+    return profile;
+  } catch (e) {
+    console.error('❌ Error agregando opción de transferencia:', e);
+    return null;
+  }
+};
+
+export const updateTransferOption = async (transferOptionId: string, data: Omit<TransferOptionProfile, 'id'>): Promise<TransferOptionProfile | null> => {
+  try {
+    const idx = localDataCache.transferOptions.findIndex(p => p.id === transferOptionId);
+    if (idx === -1) return null;
+    const updated: TransferOptionProfile = { ...localDataCache.transferOptions[idx], ...data, id: transferOptionId };
+    markProtectedSectionDirty('transferOptions');
+    localDataCache.transferOptions[idx] = updated;
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar actualización de transferencia');
+    window.dispatchEvent(new CustomEvent('transferOptionUpdated'));
+    return updated;
+  } catch (e) {
+    console.error('❌ Error actualizando opción de transferencia:', e);
+    return null;
+  }
+};
+
+export const deleteTransferOption = async (transferOptionId: string): Promise<{ removed: boolean; reason?: string }> => {
+  try {
+    if (localDataCache.invoices.some(inv => inv.transferOptionId === transferOptionId)) {
+      return { removed: false, reason: 'in-use' };
+    }
+    const before = localDataCache.transferOptions.length;
+    markProtectedSectionDirty('transferOptions');
+    localDataCache.transferOptions = localDataCache.transferOptions.filter(p => p.id !== transferOptionId);
+    if (localDataCache.transferOptions.length === before) return { removed: false, reason: 'not-found' };
+    await forceSaveToAzure();
+    window.dispatchEvent(new CustomEvent('transferOptionUpdated'));
+    return { removed: true };
+  } catch (e) {
+    console.error('❌ Error eliminando opción de transferencia:', e);
+    return { removed: false, reason: 'error' };
+  }
+};
+
+// ========================= INVOICE FOOTER NOTES =========================
+
+export const loadInvoiceFooterNotes = async (): Promise<InvoiceFooterNote[]> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
+  }
+  return localDataCache.invoiceFooterNotes;
+};
+
+export const addInvoiceFooterNote = async (data: Omit<InvoiceFooterNote, 'id'>): Promise<InvoiceFooterNote | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+    const note: InvoiceFooterNote = {
+      id: `footer_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      effectiveFrom: normalizeDateYYYYMMDD(data.effectiveFrom, '2024-03-26'),
+      es: (data.es || '').trim(),
+      en: (data.en || '').trim()
+    };
+    markProtectedSectionDirty('invoiceFooterNotes');
+    localDataCache.invoiceFooterNotes = normalizeInvoiceFooterNotes([...localDataCache.invoiceFooterNotes, note]);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar nota de pie de factura');
+    window.dispatchEvent(new CustomEvent('invoiceFooterNotesUpdated'));
+    return note;
+  } catch (e) {
+    console.error('❌ Error agregando nota de pie de factura:', e);
+    return null;
+  }
+};
+
+export const updateInvoiceFooterNote = async (id: string, data: Omit<InvoiceFooterNote, 'id'>): Promise<InvoiceFooterNote | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+    const idx = localDataCache.invoiceFooterNotes.findIndex(n => n.id === id);
+    if (idx === -1) return null;
+    const updated: InvoiceFooterNote = {
+      id,
+      effectiveFrom: normalizeDateYYYYMMDD(data.effectiveFrom, localDataCache.invoiceFooterNotes[idx].effectiveFrom),
+      es: (data.es || '').trim(),
+      en: (data.en || '').trim()
+    };
+    markProtectedSectionDirty('invoiceFooterNotes');
+    localDataCache.invoiceFooterNotes[idx] = updated;
+    localDataCache.invoiceFooterNotes = normalizeInvoiceFooterNotes(localDataCache.invoiceFooterNotes);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar actualización de nota de pie de factura');
+    window.dispatchEvent(new CustomEvent('invoiceFooterNotesUpdated'));
+    return updated;
+  } catch (e) {
+    console.error('❌ Error actualizando nota de pie de factura:', e);
+    return null;
+  }
+};
+
+export const deleteInvoiceFooterNote = async (id: string): Promise<boolean> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+    const before = localDataCache.invoiceFooterNotes.length;
+    markProtectedSectionDirty('invoiceFooterNotes');
+    localDataCache.invoiceFooterNotes = localDataCache.invoiceFooterNotes.filter(n => n.id !== id);
+    if (localDataCache.invoiceFooterNotes.length === before) return false;
+    localDataCache.invoiceFooterNotes = normalizeInvoiceFooterNotes(localDataCache.invoiceFooterNotes);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar eliminación de nota de pie de factura');
+    window.dispatchEvent(new CustomEvent('invoiceFooterNotesUpdated'));
+    return true;
+  } catch (e) {
+    console.error('❌ Error eliminando nota de pie de factura:', e);
+    return false;
+  }
+};
+
+export const getApplicableInvoiceFooterText = async (invoiceDate: string, language: Language): Promise<string> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
+  }
+  const date = normalizeDateYYYYMMDD(invoiceDate, new Date().toISOString().split('T')[0]);
+  const notes = localDataCache.invoiceFooterNotes;
+  if (!notes.length) return '';
+  const sorted = [...notes].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+
+  // Tomar la última nota con effectiveFrom <= invoiceDate
+  let selected = sorted.filter(n => n.effectiveFrom <= date).slice(-1)[0];
+  if (!selected) selected = sorted[0];
+
+  const text = language === 'es' ? selected.es : selected.en;
+  return (text || '').trim();
+};
+
+// ========================= INVOICE NUMBERING =========================
+
+export const loadInvoiceNumberingSettings = async (): Promise<InvoiceNumberingSettings> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
+  }
+  return localDataCache.invoiceNumbering;
+};
+
+export const updateInvoiceNumberingSettings = async (settings: InvoiceNumberingSettings): Promise<InvoiceNumberingSettings | null> => {
+  try {
+    if (!localDataCache.isInitialized) {
+      await initializeFromAzure();
+    }
+    markProtectedSectionDirty('invoiceNumbering');
+    localDataCache.invoiceNumbering = normalizeInvoiceNumberingSettings(settings);
+    const ok = await forceSaveToAzure();
+    if (!ok) console.warn('⚠️ No se pudo sincronizar numeración de facturas');
+    window.dispatchEvent(new CustomEvent('invoiceNumberingUpdated'));
+    return localDataCache.invoiceNumbering;
+  } catch (e) {
+    console.error('❌ Error actualizando numeración de facturas:', e);
+    return null;
+  }
+};
+
+const computeNextInvoiceSequenceNumber = (prefix: string, fallbackNextNumber: number): number => {
+  const effectivePrefix = prefix.trim() || defaultInvoiceNumberingSettings.prefix;
+  const nextNumber = Number.isFinite(fallbackNextNumber) && fallbackNextNumber >= 1
+    ? Math.floor(fallbackNextNumber)
+    : defaultInvoiceNumberingSettings.startNumber;
+
+  const pattern = new RegExp(`^${escapeRegExp(effectivePrefix)}[-\\s_]*(\\d+)$`);
+  const invoiceNumbers = localDataCache.invoices
+    .map(invoice => (invoice.invoiceNumber || '').trim())
+    .map((num) => {
+      const m = pattern.exec(num);
+      return m ? parseInt(m[1], 10) : NaN;
+    })
     .filter(num => !isNaN(num))
     .sort((a, b) => b - a);
 
-  if (invoiceNumbers.length === 0) {
-    return 'LP101';
+  const maxExisting = invoiceNumbers.length > 0 ? invoiceNumbers[0] : null;
+  const maxPlusOne = maxExisting !== null ? (maxExisting + 1) : null;
+  return Math.max(nextNumber, maxPlusOne ?? 0);
+};
+
+// Reserva el siguiente número de factura (persistente). Úsalo SOLO cuando efectivamente vas a generar/guardar.
+export const reserveNextInvoiceNumber = async (): Promise<string> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
   }
 
-  return `LP${invoiceNumbers[0] + 1}`;
+  const settings = normalizeInvoiceNumberingSettings(localDataCache.invoiceNumbering);
+  const prefix = (settings.prefix || defaultInvoiceNumberingSettings.prefix).trim() || defaultInvoiceNumberingSettings.prefix;
+  const next = computeNextInvoiceSequenceNumber(prefix, settings.nextNumber ?? settings.startNumber);
+  const reserved = `${prefix}${next}`;
+
+  // Avanzar y persistir
+  markProtectedSectionDirty('invoiceNumbering');
+  localDataCache.invoiceNumbering = {
+    ...settings,
+    prefix,
+    nextNumber: next + 1
+  };
+
+  const ok = await forceSaveToAzure();
+  if (!ok) console.warn('⚠️ No se pudo sincronizar reserva de numeración de facturas');
+  window.dispatchEvent(new CustomEvent('invoiceNumberingUpdated'));
+  return reserved;
+};
+
+export const getNextInvoiceNumber = async (): Promise<string> => {
+  if (!localDataCache.isInitialized) {
+    await initializeFromAzure();
+  }
+  const settings = normalizeInvoiceNumberingSettings(localDataCache.invoiceNumbering);
+  const prefix = (settings.prefix || defaultInvoiceNumberingSettings.prefix).trim() || defaultInvoiceNumberingSettings.prefix;
+  const next = computeNextInvoiceSequenceNumber(prefix, settings.nextNumber ?? settings.startNumber);
+  return `${prefix}${next}`;
 };
 
 export const getAvailableCoursesForInvoicing = async (clientId?: string): Promise<Course[]> => {
@@ -1270,17 +1797,45 @@ export const initializeAutoSync = (intervalMinutes: number = 15): void => {
 
 // Función de exportación para compatibilidad (aunque ya no se use manualmente)
 export const exportAllData = async (): Promise<string> => {
+  const azureBlobConfig = getAzureBlobConfig() ?? undefined;
   const data = {
     courses: localDataCache.courses,
     clients: localDataCache.clients,
     invoices: localDataCache.invoices,
-  instructors: localDataCache.instructors,
-  blackouts: localDataCache.blackouts,
+    azureBlobConfig,
+    instructors: localDataCache.instructors,
+    blackouts: localDataCache.blackouts,
+    issuerProfiles: localDataCache.issuerProfiles,
+    transferOptions: localDataCache.transferOptions,
+    invoiceNumbering: localDataCache.invoiceNumbering,
+    invoiceFooterNotes: localDataCache.invoiceFooterNotes,
     exportDate: new Date().toISOString(),
-    version: 2
+    version: 3
   };
   
   return JSON.stringify(data, null, 2);
+};
+
+/**
+ * Crea (o sobrescribe) el JSON remoto con una estructura mínima/limpia.
+ * Útil cuando el blob aún no existe y quieres iniciar desde cero en ese storage.
+ */
+export const createBlankRemoteJson = async (): Promise<boolean> => {
+  try {
+    // JSON realmente "vacío": sin configuración ni catálogos (emisores, transferencias, etc).
+    const blank = {
+      courses: [] as Course[],
+      clients: [] as Client[],
+      invoices: [] as InvoiceFromCourse[],
+      exportDate: new Date().toISOString(),
+      version: 3
+    };
+
+    return await saveDataToAzure(blank as any);
+  } catch (error) {
+    console.error('❌ Error creando JSON remoto en blanco:', error);
+    return false;
+  }
 };
 
 // Función de sincronización manual (para debug)
@@ -1298,17 +1853,11 @@ export const clearExampleData = (): void => {
   console.log('🧹 Limpiando datos de ejemplo del cache local...');
   
   const exampleClientIds = ['client_default_1', 'client_default_2', 'client_default_3'];
-  const exampleClientNames = [
-    'Fast Lane Consulting Services Latam',
-    'CAS Training Institute', 
-    'Technofocus Pte Ltd.'
-  ];
   
   // Filtrar clientes de ejemplo
   const originalClientsCount = localDataCache.clients.length;
   localDataCache.clients = localDataCache.clients.filter(client => 
-    !exampleClientIds.includes(client.id) && 
-    !exampleClientNames.includes(client.name)
+    !exampleClientIds.includes(client.id)
   );
   
   // Filtrar cursos asociados a clientes de ejemplo
@@ -1384,6 +1933,16 @@ export const clearAllData = async (): Promise<boolean> => {
     localDataCache.invoices = [];
     localDataCache.instructors = [];
     localDataCache.blackouts = [];
+    localDataCache.issuerProfiles = [];
+    localDataCache.transferOptions = [];
+    localDataCache.invoiceNumbering = { ...defaultInvoiceNumberingSettings };
+    localDataCache.invoiceFooterNotes = [];
+
+    // Este flujo es explícitamente destructivo: debe sobrescribir también secciones protegidas.
+    markProtectedSectionDirty('issuerProfiles');
+    markProtectedSectionDirty('transferOptions');
+    markProtectedSectionDirty('invoiceNumbering');
+    markProtectedSectionDirty('invoiceFooterNotes');
     localDataCache.lastUpdate = new Date().toISOString();
     // Importante: marcar como inicializado para evitar re-hidratar desde Azure antes de guardar
     localDataCache.isInitialized = true;
@@ -1398,6 +1957,10 @@ export const clearAllData = async (): Promise<boolean> => {
       window.dispatchEvent(new CustomEvent('invoiceUpdated'));
       window.dispatchEvent(new CustomEvent('instructorUpdated'));
       window.dispatchEvent(new CustomEvent('blackoutUpdated'));
+      window.dispatchEvent(new CustomEvent('issuerUpdated'));
+      window.dispatchEvent(new CustomEvent('transferOptionUpdated'));
+      window.dispatchEvent(new CustomEvent('invoiceNumberingUpdated'));
+      window.dispatchEvent(new CustomEvent('invoiceFooterNotesUpdated'));
       console.log('✅ BORRADO TOTAL completado y guardado en Azure');
       return true;
     }
@@ -1423,7 +1986,7 @@ export const diagnoseInvoiceIssues = async (invoiceId: string): Promise<void> =>
     if (cachedInvoice) {
       console.log('✅ Factura encontrada en cache local:');
       console.log('📋 Datos actuales:', cachedInvoice);
-      console.log('🔍 Emisor actual:', cachedInvoice.issuer);
+      console.log('🔍 Emisor actual:', cachedInvoice.issuerId);
     } else {
       console.error('❌ Factura NO encontrada en cache local');
     }
@@ -1438,14 +2001,14 @@ export const diagnoseInvoiceIssues = async (invoiceId: string): Promise<void> =>
       if (azureInvoice) {
         console.log('✅ Factura encontrada en Azure:');
         console.log('📋 Datos en Azure:', azureInvoice);
-  console.log('🔍 Emisor en Azure:', azureInvoice.issuer);
+        console.log('🔍 Emisor en Azure:', (azureInvoice as any).issuerId ?? (azureInvoice as any).issuer);
         
         // Comparar datos
         if (cachedInvoice) {
           console.log('🔍 Comparación Cache vs Azure:');
-          console.log('  - Emisor Cache:', cachedInvoice.issuer);
-          console.log('  - Emisor Azure:', azureInvoice.issuer);
-          console.log('  - ¿Coinciden?', cachedInvoice.issuer === azureInvoice.issuer ? '✅' : '❌');
+          console.log('  - Emisor Cache:', cachedInvoice.issuerId);
+          console.log('  - Emisor Azure:', (azureInvoice as any).issuerId ?? (azureInvoice as any).issuer);
+          console.log('  - ¿Coinciden?', cachedInvoice.issuerId === ((azureInvoice as any).issuerId ?? (azureInvoice as any).issuer) ? '✅' : '❌');
         }
       } else {
         console.error('❌ Factura NO encontrada en Azure');
@@ -1471,6 +2034,10 @@ export const forceReloadFromAzure = async (): Promise<boolean> => {
         invoices: [],
         instructors: [],
         blackouts: [],
+        issuerProfiles: [],
+        transferOptions: [],
+        invoiceNumbering: { ...defaultInvoiceNumberingSettings },
+        invoiceFooterNotes: [],
         lastUpdate: new Date().toISOString(),
         isInitialized: false
       };

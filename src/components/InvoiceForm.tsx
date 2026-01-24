@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Invoice, Item, Issuer, Language, TransferOption, Client } from '../types';
-import { transferOptions, invoiceLabels } from '../constants/invoiceConstants';
-import { loadClients } from '../utils/storage';
+import { Client, Currency, Invoice, Item, IssuerId, Language, TransferOptionId, supportedCurrencies } from '../types';
+import { invoiceLabels } from '../constants/invoiceConstants';
+import { loadClients, loadIssuerProfiles, loadTransferOptions } from '../utils/storage';
+import { formatCurrency } from '../utils/numberUtils';
 import { Plus, X, Edit2, Users, FileText, Settings, CreditCard } from 'lucide-react';
 
 interface InvoiceFormProps {
@@ -10,15 +11,15 @@ interface InvoiceFormProps {
   addItem: (item: Item) => void;
   editItem: (index: number, item: Item) => void;
   deleteItem: (index: number) => void;
-  selectedIssuer: Issuer;
-  setSelectedIssuer: (issuer: Issuer) => void;
+  selectedIssuerId: IssuerId;
+  setSelectedIssuerId: (issuerId: IssuerId) => void;
   invoiceNumber: string;
   paymentTerms: number;
   setPaymentTerms: (terms: number) => void;
   language: Language;
   setLanguage: (lang: Language) => void;
-  selectedTransfer: TransferOption;
-  setSelectedTransfer: (transfer: TransferOption) => void;
+  selectedTransferOptionId: TransferOptionId;
+  setSelectedTransferOptionId: (transferOptionId: TransferOptionId) => void;
   onGenerateFromCourses?: () => void;
   onClearInvoice?: () => void;
   onSaveInvoice?: () => void;
@@ -30,20 +31,22 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
   addItem,
   editItem,
   deleteItem,
-  selectedIssuer,
-  setSelectedIssuer,
+  selectedIssuerId,
+  setSelectedIssuerId,
   invoiceNumber,
   paymentTerms,
   setPaymentTerms,
   language,
   setLanguage,
-  selectedTransfer,
-  setSelectedTransfer,
+  selectedTransferOptionId,
+  setSelectedTransferOptionId,
   onGenerateFromCourses,
   onClearInvoice,
   onSaveInvoice,
 }) => {
   const [clients, setClients] = useState<Client[]>([]);
+  const [issuerProfiles, setIssuerProfiles] = useState<Array<{ id: string; label: string }>>([]);
+  const [transferOptionProfiles, setTransferOptionProfiles] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [newItem, setNewItem] = useState<Item>({
     description: '',
@@ -51,20 +54,29 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
     unitPrice: 0,
   });
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [manualClientMode, setManualClientMode] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
-      const loadedClients = await loadClients();
+      const [loadedClients, loadedIssuers, loadedTransfers] = await Promise.all([
+        loadClients(),
+        loadIssuerProfiles(),
+        loadTransferOptions(),
+      ]);
       setClients(loadedClients);
+      const issuerOptions = loadedIssuers.map(i => ({ id: i.id, label: i.label }));
+      const transferOptions = loadedTransfers.map(t => ({ id: t.id, label: t.label }));
+      setIssuerProfiles(issuerOptions);
+      setTransferOptionProfiles(transferOptions);
+
+      if (!selectedIssuerId && issuerOptions.length > 0) {
+        setSelectedIssuerId(issuerOptions[0].id as IssuerId);
+      }
+      if (!selectedTransferOptionId && transferOptions.length > 0) {
+        setSelectedTransferOptionId(transferOptions[0].id as TransferOptionId);
+      }
     };
     loadData();
   }, []);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    updateInvoice({ [name]: value });
-  };
 
   const handleClientSelect = (clientId: string) => {
     setSelectedClientId(clientId);
@@ -118,13 +130,6 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
     deleteItem(index);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-ES', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
-
   const t = invoiceLabels[language];
 
   return (
@@ -153,7 +158,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               <button
                 onClick={onSaveInvoice}
                 className="inline-flex items-center px-2 py-1 border border-green-300 rounded-md text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-                disabled={!invoice.clientName || invoice.items.length === 0}
+                disabled={!selectedClientId || invoice.items.length === 0}
                 title={language === 'es' ? 'Guardar factura actual' : 'Save current invoice'}
               >
                 <FileText className="h-3 w-3 mr-1" />
@@ -205,12 +210,32 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
             </label>
             <select
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={selectedIssuer}
-              onChange={(e) => setSelectedIssuer(e.target.value as Issuer)}
+              value={selectedIssuerId}
+              onChange={(e) => setSelectedIssuerId(e.target.value as IssuerId)}
               title={language === 'es' ? 'Seleccionar emisor' : 'Select issuer'}
             >
-              <option value="colombia">🇨🇴 Colombia</option>
-              <option value="usa">🇺🇸 USA</option>
+              <option value="" disabled>
+                {language === 'es' ? 'Configura emisores en Admin' : 'Configure issuers in Admin'}
+              </option>
+              {issuerProfiles.map(issuer => (
+                <option key={issuer.id} value={issuer.id}>{issuer.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {language === 'es' ? 'Moneda' : 'Currency'}
+            </label>
+            <select
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={invoice.currency}
+              onChange={(e) => updateInvoice({ currency: e.target.value as Currency })}
+              title={language === 'es' ? 'Seleccionar moneda de la factura' : 'Select invoice currency'}
+            >
+              {supportedCurrencies.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -249,13 +274,16 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
             </label>
             <select
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={selectedTransfer}
-              onChange={(e) => setSelectedTransfer(e.target.value as TransferOption)}
+              value={selectedTransferOptionId}
+              onChange={(e) => setSelectedTransferOptionId(e.target.value as TransferOptionId)}
               title={language === 'es' ? 'Seleccionar opción de transferencia' : 'Select transfer option'}
             >
-              <option value="usa">🇺🇸 {transferOptions.usa.name}</option>
-              <option value="panama">🇵🇦 {transferOptions.panama.name}</option>
-              <option value="colombia">🇨🇴 {transferOptions.colombia.name}</option>
+              <option value="" disabled>
+                {language === 'es' ? 'Configura transferencias en Admin' : 'Configure transfer options in Admin'}
+              </option>
+              {transferOptionProfiles.map(opt => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -270,43 +298,28 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               {language === 'es' ? 'Datos del Cliente' : 'Client Details'}
             </h2>
           </div>
-          <button
-            onClick={() => setManualClientMode(!manualClientMode)}
-            className="text-sm text-blue-600 hover:text-blue-700"
-            title={manualClientMode 
-              ? (language === 'es' ? 'Usar lista de clientes' : 'Use client list')
-              : (language === 'es' ? 'Cliente nuevo' : 'New client')
-            }
-          >
-            {manualClientMode 
-              ? (language === 'es' ? 'Usar lista de clientes' : 'Use client list')
-              : (language === 'es' ? 'Cliente nuevo' : 'New client')
-            }
-          </button>
         </div>
 
-        {!manualClientMode && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {language === 'es' ? 'Seleccionar Cliente' : 'Select Client'} *
-            </label>
-            <select
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={selectedClientId}
-              onChange={(e) => handleClientSelect(e.target.value)}
-              title={language === 'es' ? 'Seleccionar cliente' : 'Select client'}
-            >
-              <option value="">
-                {language === 'es' ? 'Seleccionar cliente existente...' : 'Select existing client...'}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {language === 'es' ? 'Seleccionar Cliente' : 'Select Client'} *
+          </label>
+          <select
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={selectedClientId}
+            onChange={(e) => handleClientSelect(e.target.value)}
+            title={language === 'es' ? 'Seleccionar cliente' : 'Select client'}
+          >
+            <option value="" disabled>
+              {language === 'es' ? 'Selecciona un cliente (créalo en Admin)' : 'Select a client (create it in Admin)'}
+            </option>
+            {clients.map(client => (
+              <option key={client.id} value={client.id}>
+                {client.name} - {client.nit}
               </option>
-              {clients.map(client => (
-                <option key={client.id} value={client.id}>
-                  {client.name} - {client.nit}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+            ))}
+          </select>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -314,12 +327,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               {language === 'es' ? 'Nombre' : 'Name'} *
             </label>
             <input
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 focus:outline-none"
               type="text"
               name="clientName"
               value={invoice.clientName}
-              onChange={handleInputChange}
               placeholder={language === 'es' ? 'Nombre del cliente' : 'Client name'}
+              readOnly
               required
             />
           </div>
@@ -329,12 +342,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               NIT *
             </label>
             <input
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 focus:outline-none"
               type="text"
               name="clientNIT"
               value={invoice.clientNIT}
-              onChange={handleInputChange}
               placeholder="123456789-0"
+              readOnly
               required
             />
           </div>
@@ -344,12 +357,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               {language === 'es' ? 'Dirección' : 'Address'} *
             </label>
             <input
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 focus:outline-none"
               type="text"
               name="clientAddress"
               value={invoice.clientAddress}
-              onChange={handleInputChange}
               placeholder={language === 'es' ? 'Dirección del cliente' : 'Client address'}
+              readOnly
               required
             />
           </div>
@@ -359,12 +372,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               {language === 'es' ? 'Teléfono' : 'Phone'} *
             </label>
             <input
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 focus:outline-none"
               type="text"
               name="clientPhone"
               value={invoice.clientPhone}
-              onChange={handleInputChange}
               placeholder="(+57) 300 123 4567"
+              readOnly
               required
             />
           </div>
@@ -374,12 +387,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
               {language === 'es' ? 'Ciudad' : 'City'} *
             </label>
             <input
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 focus:outline-none"
               type="text"
               name="clientCity"
               value={invoice.clientCity}
-              onChange={handleInputChange}
               placeholder={language === 'es' ? 'Ciudad, País' : 'City, Country'}
+              readOnly
               required
             />
           </div>
@@ -501,10 +514,10 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                       {item.quantity}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(item.unitPrice)}
+                      {formatCurrency(item.unitPrice, invoice.currency)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatCurrency(item.quantity * item.unitPrice)}
+                      {formatCurrency(item.quantity * item.unitPrice, invoice.currency)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                       <button
@@ -547,7 +560,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                 {language === 'es' ? 'Total de la Factura:' : 'Invoice Total:'}
               </span>
               <span className="text-2xl font-bold text-blue-900">
-                {formatCurrency(invoice.total)}
+                {formatCurrency(invoice.total, invoice.currency)}
               </span>
             </div>
           </div>

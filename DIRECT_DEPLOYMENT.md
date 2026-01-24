@@ -49,7 +49,7 @@ npm run build
 ### Paso 2: **Deployment Directo**
 ```bash
 # Opción A: Usando Static Web Apps CLI
-swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410 --env production
+swa deploy ./dist --deployment-token $SWA_DEPLOYMENT_TOKEN --env production
 
 # Opción B: Usando Azure CLI (si prefieres)
 az staticwebapp deploy \
@@ -69,7 +69,7 @@ echo 🏗️ Building application...
 npm run build
 
 echo 🚀 Deploying to Azure Static Web Apps...
-swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410 --env production
+swa deploy ./dist --deployment-token $SWA_DEPLOYMENT_TOKEN --env production
 
 echo ✅ Deployment completed!
 echo 🌐 Your app should be available at: https://[tu-app].azurestaticapps.net
@@ -83,7 +83,7 @@ echo "🏗️ Building application..."
 npm run build
 
 echo "🚀 Deploying to Azure Static Web Apps..."
-swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410
+swa deploy ./dist --deployment-token $SWA_DEPLOYMENT_TOKEN
 
 echo "✅ Deployment completed!"
 echo "🌐 Your app should be available at: https://[tu-app].azurestaticapps.net"
@@ -96,7 +96,7 @@ Agrega esto a tu `package.json`:
 ```json
 {
   "scripts": {
-    "deploy": "npm run build && swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410 --env production"
+    "deploy": "npm run build && swa deploy ./dist --deployment-token $SWA_DEPLOYMENT_TOKEN --env production"
   }
 }
 ```
@@ -154,7 +154,7 @@ ls -la dist/
 ### 3. **Deploy**
 ```bash
 # Deployment directo
-swa deploy ./dist --deployment-token b65c4dbbb627fc20e437229ddb1012b09aed5fc8ee7a3d7cb821afc91f3b1bd002-d5eb9306-d54c-477e-990b-b1fb3eca3019010182103f262410 --env production
+swa deploy ./dist --deployment-token $SWA_DEPLOYMENT_TOKEN --env production
 ```
 
 ### 4. **Verificación**

@@ -6,7 +6,7 @@ Este documento explica cómo funciona la sincronización automática con Azure B
 
 ### URL del Blob Storage
 ```
-https://cmfiles.blob.core.windows.net/capacitaciones/sistema_gestion_completo.json
+https://<account>.blob.core.windows.net/<container>/<blob>.json
 ```
 
 ### Clave de Acceso
