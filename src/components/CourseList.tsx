@@ -541,8 +541,6 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                         title={
                           course.status !== 'creado'
                             ? 'Solo se pueden eliminar cursos en estado "Creado"'
-                            : course.status === 'facturado'
-                            ? 'Eliminar curso facturado (requiere confirmación especial)'
                             : 'Eliminar curso'
                         }
                       >

@@ -68,10 +68,10 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     });
   }, [courses]);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency: string = 'USD') => {
     return new Intl.NumberFormat('es-ES', {
       style: 'currency',
-      currency: 'USD'
+      currency
     }).format(amount);
   };
 

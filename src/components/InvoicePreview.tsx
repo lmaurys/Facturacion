@@ -3,8 +3,9 @@ import { Invoice, IssuerId, Language } from '../types';
 import { numberToWords } from '../utils/numberToWords';
 import { invoiceLabels } from '../constants/invoiceConstants';
 import { formatHours, formatCurrency } from '../utils/numberUtils';
-import { getApplicableInvoiceFooterText, loadIssuerProfiles, loadTransferOptions } from '../utils/storage';
+import { getApplicableInvoiceFooterText, loadIssuerProfiles, loadTenantBranding, loadTransferOptions } from '../utils/storage';
 import defaultLogo from '../assets/MCT.png';
+import { readLogoSource } from '../utils/tenantBranding';
 
 interface InvoicePreviewProps {
   invoice: Invoice;
@@ -18,15 +19,18 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
   const [issuerProfiles, setIssuerProfiles] = React.useState<Array<{ id: string; name: string; nit: string; address: string; phone: string; city: string; email: string; logoDataUrl?: string; logoUrl?: string }>>([]);
   const [transferOptions, setTransferOptions] = React.useState<Array<{ id: string; bankName: string; bankAddress: string; country: string; swiftCode: string; routingNumber?: string; abaCode?: string; accountOwner: string; accountNumber: { es: string; en: string }; accountOwnerAddress: string }>>([]);
   const [footerText, setFooterText] = React.useState<string>('');
+  const [tenantLogoSrc, setTenantLogoSrc] = React.useState<string>('');
 
   React.useEffect(() => {
     const load = async () => {
-      const [issuers, transfers] = await Promise.all([
+      const [issuers, transfers, branding] = await Promise.all([
         loadIssuerProfiles(),
         loadTransferOptions(),
+        loadTenantBranding(),
       ]);
       setIssuerProfiles(issuers);
       setTransferOptions(transfers);
+      setTenantLogoSrc(readLogoSource(branding));
     };
     load();
   }, []);
@@ -50,15 +54,15 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
   const t = invoiceLabels[language];
   const issuer = issuerProfiles.find(i => i.id === selectedIssuerId);
   const selectedTransfer = transferOptions.find(t => t.id === invoice.transferOptionId);
-  const issuerLogoSrc = (issuer?.logoDataUrl || issuer?.logoUrl || defaultLogo || '').trim();
+  const invoiceLogoSrc = (tenantLogoSrc || issuer?.logoDataUrl || issuer?.logoUrl || defaultLogo || '').trim();
 
   return (
     <div className="bg-white rounded p-4 mb-4 text-[11px] font-sans w-full mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
         <div className="flex items-center mb-4 sm:mb-0">
-          {issuerLogoSrc ? (
+          {invoiceLogoSrc ? (
             <img
-              src={issuerLogoSrc}
+              src={invoiceLogoSrc}
               alt="Logo"
               crossOrigin="anonymous"
               className="h-12 w-auto mr-3 object-contain"

@@ -2,8 +2,19 @@ import React, { useState, useEffect } from 'react';
 import InvoiceList from './InvoiceList';
 import InvoiceViewer from './InvoiceViewer';
 import InvoiceEditor from './InvoiceEditor';
-import { InvoiceFromCourse, Client, Course } from '../types';
-import { loadInvoices, deleteInvoice, loadClients, loadCourses, updateCourse } from '../utils/storage';
+import InvoiceFromCourses from './InvoiceFromCourses';
+import { Plus } from 'lucide-react';
+import { InvoiceFromCourse, Client, Course, Item, Currency } from '../types';
+import {
+  addInvoice,
+  deleteInvoice,
+  loadClients,
+  loadCourses,
+  loadInvoices,
+  loadIssuerProfiles,
+  loadTransferOptions,
+  updateCourse,
+} from '../utils/storage';
 
 const InvoiceManagement: React.FC = () => {
   const [invoices, setInvoices] = useState<InvoiceFromCourse[]>([]);
@@ -12,6 +23,7 @@ const InvoiceManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [viewingInvoice, setViewingInvoice] = useState<InvoiceFromCourse | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceFromCourse | null>(null);
+  const [showGenerateFromCourses, setShowGenerateFromCourses] = useState(false);
 
   useEffect(() => {
     loadAllData();
@@ -89,6 +101,7 @@ const InvoiceManagement: React.FC = () => {
   const handleCloseModals = () => {
     setViewingInvoice(null);
     setEditingInvoice(null);
+    setShowGenerateFromCourses(false);
   };
 
   const handleSaveEdit = async () => {
@@ -96,17 +109,73 @@ const InvoiceManagement: React.FC = () => {
     await loadAllData(); // Recargar datos después de editar
   };
 
+  const handleGenerateFromCourses = async (
+    items: Item[],
+    clientData: Client,
+    courseIds: string[],
+    invoiceNumber: string,
+    currency: Currency,
+  ) => {
+    try {
+      const [issuerProfiles, transferOptions] = await Promise.all([
+        loadIssuerProfiles(),
+        loadTransferOptions(),
+      ]);
+
+      const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      const created = await addInvoice({
+        clientId: clientData.id,
+        courseIds,
+        invoiceNumber,
+        invoiceDate: new Date().toISOString().slice(0, 10),
+        currency,
+        issuerId: issuerProfiles[0]?.id || '',
+        language: 'es',
+        paymentTerms: 30,
+        subtotal: total,
+        total,
+        status: 'draft',
+        transferOptionId: transferOptions[0]?.id || '',
+        observations: `Factura generada desde cursos dictados para ${clientData.name}.`,
+        items: [],
+      });
+
+      if (!created) {
+        throw new Error('No se pudo crear el borrador de la factura.');
+      }
+
+      await loadAllData();
+      setShowGenerateFromCourses(false);
+      setEditingInvoice(created);
+    } catch (error) {
+      console.error('Error generating invoice from courses:', error);
+
+      const selectedCourseObjects = courses.filter((course) => courseIds.includes(course.id));
+      await Promise.all(
+        selectedCourseObjects.map((course) =>
+          updateCourse(course.id, {
+            ...course,
+            status: 'dictado',
+            invoiceNumber: '',
+            invoiceDate: '',
+          }),
+        ),
+      );
+
+      await loadAllData();
+      alert('No se pudo generar la factura desde cursos. Se revirtieron los cursos a "dictado".');
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-white shadow-md rounded-lg p-6">
-            <div className="animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
-              <div className="space-y-3">
-                <div className="h-4 bg-gray-200 rounded"></div>
-                <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-              </div>
+      <div className="space-y-4 sm:space-y-6">
+        <div className="rounded-2xl bg-white p-4 shadow-md sm:p-6">
+          <div className="animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
+            <div className="space-y-3">
+              <div className="h-4 bg-gray-200 rounded"></div>
+              <div className="h-4 bg-gray-200 rounded w-5/6"></div>
             </div>
           </div>
         </div>
@@ -115,22 +184,27 @@ const InvoiceManagement: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Encabezado limpio y responsive */}
-        <div className="bg-white shadow-md rounded-lg p-4 mb-6">
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Gestión de Facturas</h1>
-          </div>
+    <div className="space-y-4 sm:space-y-6">
+      {/* Encabezado limpio y responsive */}
+      <div className="rounded-2xl bg-white p-4 shadow-md sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Gestión de Facturas</h1>
+          <button
+            onClick={() => setShowGenerateFromCourses(true)}
+            className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            <Plus className="mr-2" size={16} />
+            Desde cursos dictados
+          </button>
         </div>
-
-        <InvoiceList
-          invoices={invoices}
-          onView={handleViewInvoice}
-          onEdit={handleEditInvoice}
-          onDelete={handleDeleteInvoice}
-        />
       </div>
+
+      <InvoiceList
+        invoices={invoices}
+        onView={handleViewInvoice}
+        onEdit={handleEditInvoice}
+        onDelete={handleDeleteInvoice}
+      />
 
       {/* Modal para ver factura */}
       {viewingInvoice && (
@@ -155,6 +229,13 @@ const InvoiceManagement: React.FC = () => {
           presetStatus={(editingInvoice as any)._presetStatus}
           presetPaymentDate={(editingInvoice as any)._presetPaymentDate}
           presetPaidAmount={(editingInvoice as any)._presetPaidAmount}
+        />
+      )}
+
+      {showGenerateFromCourses && (
+        <InvoiceFromCourses
+          onGenerateInvoice={handleGenerateFromCourses}
+          onClose={() => setShowGenerateFromCourses(false)}
         />
       )}
     </div>

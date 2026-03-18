@@ -1,3 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --tenant-primary: #0f172a;
+    --tenant-primary-rgb: 15 23 42;
+    --tenant-primary-contrast: #ffffff;
+    --tenant-accent: #0ea5e9;
+    --tenant-accent-rgb: 14 165 233;
+    --tenant-surface: #ffffff;
+    --tenant-surface-rgb: 255 255 255;
+    color: #0f172a;
+    background:
+      radial-gradient(circle at top, rgba(125, 211, 252, 0.22), transparent 28%),
+      linear-gradient(180deg, #f8fcff 0%, #f6fafc 42%, #eef4f6 100%);
+    font-family: "Sora", "Segoe UI", sans-serif;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    color: #0f172a;
+    background: transparent;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  input,
+  select,
+  textarea {
+    @apply transition duration-150;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    box-shadow:
+      0 0 0 2px rgba(var(--tenant-accent-rgb), 0.34),
+      0 0 0 4px rgba(255, 255, 255, 0.92);
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply rounded-[1.75rem] border border-white/70 bg-white/85 shadow-xl shadow-slate-900/5 backdrop-blur;
+  }
+
+  .brand-solid {
+    background-color: var(--tenant-primary);
+    color: var(--tenant-primary-contrast);
+  }
+
+  .brand-solid:hover {
+    filter: brightness(1.05);
+  }
+
+  .brand-soft {
+    background-color: rgba(var(--tenant-accent-rgb), 0.12);
+    color: var(--tenant-primary);
+  }
+
+  .brand-outline {
+    border-color: rgba(var(--tenant-accent-rgb), 0.22);
+    background-color: rgba(var(--tenant-surface-rgb), 0.92);
+    color: var(--tenant-primary);
+  }
+}

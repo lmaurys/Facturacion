@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, UserPlus, Pencil, Save, X, ToggleLeft, ToggleRight, Trash2, AlertCircle, Download } from 'lucide-react';
-import { Instructor, IssuerProfile, TransferOptionProfile, InvoiceNumberingSettings, InvoiceFooterNote } from '../types';
+import { Instructor, IssuerProfile, TransferOptionProfile, InvoiceNumberingSettings, InvoiceFooterNote, TenantBranding } from '../types';
+import { useAuth } from '../auth/AuthContext';
 import {
   loadInstructors,
   addInstructor,
@@ -22,19 +23,14 @@ import {
   addInvoiceFooterNote,
   updateInvoiceFooterNote,
   deleteInvoiceFooterNote,
-  initializeFromAzure,
-  createBlankRemoteJson
+  loadTenantBranding,
+  updateTenantBranding,
 } from '../utils/storage';
-import {
-  ensureBlobPublicUrl,
-  ensureBlobSasUrl,
-  getAzureBlobConfig,
-  isContainerSasUrl,
-  setAzureBlobConfig
-} from '../utils/azureBlobConfig';
+import { defaultTenantBranding, normalizeBranding, readLogoSource } from '../utils/tenantBranding';
 
 export type DataManagementSection =
   | 'datos'
+  | 'marca'
   | 'numeracion'
   | 'nota-legal'
   | 'instructores'
@@ -47,6 +43,7 @@ interface DataManagementProps {
 }
 
 const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) => {
+  const { currentTenant } = useAuth();
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [systemStatus, setSystemStatus] = useState<'loading' | 'active' | 'error'>('loading');
   const [instructors, setInstructors] = useState<Instructor[]>([]);
@@ -112,12 +109,6 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
   const [isClearing, setIsClearing] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
-  const [azurePublicUrl, setAzurePublicUrl] = useState<string>('');
-  const [azureSasUrl, setAzureSasUrl] = useState<string>('');
-  const [azureBlobName, setAzureBlobName] = useState<string>('');
-  const [isSavingAzureConfig, setIsSavingAzureConfig] = useState<boolean>(false);
-  const [isReloadingFromAzure, setIsReloadingFromAzure] = useState<boolean>(false);
-
   const [invoiceNumbering, setInvoiceNumbering] = useState<InvoiceNumberingSettings>({ prefix: '', startNumber: 1, nextNumber: 1 });
   const [invoicePrefix, setInvoicePrefix] = useState<string>('');
   const [invoiceNextNumber, setInvoiceNextNumber] = useState<string>('1');
@@ -132,6 +123,11 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
   const [editingFooterEs, setEditingFooterEs] = useState<string>('');
   const [editingFooterEn, setEditingFooterEn] = useState<string>('');
   const [isSavingFooter, setIsSavingFooter] = useState<boolean>(false);
+  const [tenantBranding, setTenantBranding] = useState<TenantBranding>(defaultTenantBranding());
+  const [brandingDraft, setBrandingDraft] = useState<TenantBranding>(defaultTenantBranding());
+  const [isSavingBranding, setIsSavingBranding] = useState<boolean>(false);
+  const logoFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const previewBranding = normalizeBranding(brandingDraft);
 
   useEffect(() => {
     // Mostrar cuándo se cargó la página del sistema
@@ -145,16 +141,6 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
     
     setLastUpdate(currentTime);
     setSystemStatus('active');
-
-    // Cargar configuración de conexión Azure (si existe)
-    try {
-      const cfg = getAzureBlobConfig();
-      if (cfg?.publicUrl) setAzurePublicUrl(cfg.publicUrl);
-      if (cfg?.blobUrlWithSas) setAzureSasUrl(cfg.blobUrlWithSas);
-      if (cfg?.blobName) setAzureBlobName(cfg.blobName);
-    } catch {
-      // noop
-    }
 
     // Actualizar la fecha cada vez que se modifique algo
     const handleDataUpdate = () => {
@@ -202,6 +188,13 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
     };
     refreshInvoiceFooterNotes();
 
+    const refreshBranding = async () => {
+      const data = await loadTenantBranding();
+      setTenantBranding(data);
+      setBrandingDraft(data);
+    };
+    refreshBranding();
+
     // Escuchar eventos de actualización
     window.addEventListener('courseUpdated', handleDataUpdate);
     window.addEventListener('clientUpdated', handleDataUpdate);
@@ -212,6 +205,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
     window.addEventListener('transferOptionUpdated', refreshTransfers);
     window.addEventListener('invoiceNumberingUpdated', refreshInvoiceNumbering);
     window.addEventListener('invoiceFooterNotesUpdated', refreshInvoiceFooterNotes);
+    window.addEventListener('tenantBrandingUpdated', refreshBranding);
 
     return () => {
       window.removeEventListener('courseUpdated', handleDataUpdate);
@@ -223,97 +217,56 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
       window.removeEventListener('transferOptionUpdated', refreshTransfers);
       window.removeEventListener('invoiceNumberingUpdated', refreshInvoiceNumbering);
       window.removeEventListener('invoiceFooterNotesUpdated', refreshInvoiceFooterNotes);
+      window.removeEventListener('tenantBrandingUpdated', refreshBranding);
     };
   }, []);
 
-  const saveAzureConnection = async (opts?: { reload?: boolean }) => {
+  const updateBrandingField = (field: keyof TenantBranding, value: string) => {
+    setBrandingDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleBrandLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      setBrandingDraft((prev) =>
+        normalizeBranding({
+          ...prev,
+          logoDataUrl: result,
+          logoUrl: '',
+        }),
+      );
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveBranding = async () => {
     setMessage('');
-    setIsSavingAzureConfig(true);
+    setIsSavingBranding(true);
     try {
-      const finalBlobSas = ensureBlobSasUrl(azureSasUrl, azureBlobName);
-      const finalPublic = ensureBlobPublicUrl(azurePublicUrl || azureSasUrl, azureBlobName);
-
-      if (!finalBlobSas) {
-        setMessage('Debes ingresar una URL con SAS válida (puede ser de container o de blob).');
-        return;
-      }
-      if (isContainerSasUrl(azureSasUrl) && !azureBlobName.trim()) {
-        setMessage('Tu SAS apunta al container (sr=c). Debes indicar el nombre del archivo JSON (blob).');
-        return;
-      }
-
-      setAzureBlobConfig({
-        publicUrl: finalPublic ?? '',
-        blobUrlWithSas: finalBlobSas,
-        blobName: azureBlobName
-      });
-
-      if (opts?.reload) {
-        setIsReloadingFromAzure(true);
-        try {
-          const ok = await initializeFromAzure();
-          setMessage(
-            ok
-              ? 'Conexión guardada. Datos recargados desde Azure.'
-              : 'Conexión guardada, pero no se pudo recargar desde Azure. Si el archivo aún no existe en ese storage, usa “Crear JSON vacío”.'
-          );
-        } finally {
-          setIsReloadingFromAzure(false);
-        }
+      const updated = await updateTenantBranding(normalizeBranding(brandingDraft));
+      if (updated) {
+        setTenantBranding(updated);
+        setBrandingDraft(updated);
+        setMessage('Marca visual actualizada.');
       } else {
-        setMessage('Conexión guardada. Se usará en las próximas cargas/guardados a Azure.');
+        setMessage('No se pudo actualizar la marca visual.');
       }
-    } catch (e) {
-      console.error(e);
-      setMessage('No se pudo guardar la conexión de Azure.');
     } finally {
-      setIsSavingAzureConfig(false);
+      setIsSavingBranding(false);
     }
   };
 
-  const handleCreateBlankRemoteJson = async () => {
-    setMessage('');
-    if (!confirm('Esto creará un JSON nuevo en ese Blob (y podría sobrescribir si ya existe). ¿Continuar?')) return;
-
-    setIsSavingAzureConfig(true);
-    try {
-      const finalBlobSas = ensureBlobSasUrl(azureSasUrl, azureBlobName);
-      const finalPublic = ensureBlobPublicUrl(azurePublicUrl || azureSasUrl, azureBlobName);
-
-      if (!finalBlobSas) {
-        setMessage('Debes ingresar una URL con SAS válida (puede ser de container o de blob).');
-        return;
-      }
-      if (isContainerSasUrl(azureSasUrl) && !azureBlobName.trim()) {
-        setMessage('Tu SAS apunta al container (sr=c). Debes indicar el nombre del archivo JSON (blob).');
-        return;
-      }
-
-      setAzureBlobConfig({
-        publicUrl: finalPublic ?? '',
-        blobUrlWithSas: finalBlobSas,
-        blobName: azureBlobName
-      });
-
-      const okCreate = await createBlankRemoteJson();
-      if (!okCreate) {
-        setMessage('No se pudo crear el JSON en blanco. Revisa la URL con SAS y permisos.');
-        return;
-      }
-
-      setIsReloadingFromAzure(true);
-      try {
-        const okLoad = await initializeFromAzure();
-        setMessage(okLoad ? 'JSON vacío creado y datos cargados.' : 'JSON vacío creado, pero no se pudo cargar automáticamente.');
-      } finally {
-        setIsReloadingFromAzure(false);
-      }
-    } catch (e) {
-      console.error(e);
-      setMessage('Error creando el JSON en blanco.');
-    } finally {
-      setIsSavingAzureConfig(false);
-    }
+  const resetBrandingDraft = () => {
+    setBrandingDraft(tenantBranding);
   };
 
   const handleAddFooterNote = async () => {
@@ -635,7 +588,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
     try {
       const ok = await clearAllData();
       if (!ok) {
-        setMessage('No se pudieron limpiar los datos (falló el guardado en Azure).');
+        setMessage('No se pudieron limpiar los datos del tenant actual.');
         return;
       }
 
@@ -655,6 +608,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
 
   const showAll = !section;
   const showDatos = showAll || section === 'datos';
+  const showMarca = showAll || section === 'marca';
   const showNumeracion = showAll || section === 'numeracion';
   const showNotaLegal = showAll || section === 'nota-legal';
   const showInstructores = showAll || section === 'instructores';
@@ -717,91 +671,27 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
           </div>
         </div>
 
-        {/* Herramientas de Datos */}
         <div className="bg-white shadow-md rounded-lg p-6 mt-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Conexión Azure (JSON remoto)</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Arquitectura SaaS</h3>
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Nombre del archivo JSON (blob)</label>
-              <input
-                value={azureBlobName}
-                onChange={(e) => setAzureBlobName(e.target.value)}
-                placeholder="Ej: facturacion.json"
-                aria-label="Nombre del blob JSON"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Si tu SAS es de container (sr=c), este nombre es obligatorio.
-              </p>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tenant actual</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">{currentTenant?.name || 'Sin resolver'}</p>
+              <p className="mt-1 text-sm text-slate-600">{currentTenant?.tenantId || 'N/D'}</p>
             </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">URL con SAS (lectura/escritura)</label>
-              <input
-                value={azureSasUrl}
-                onChange={(e) => setAzureSasUrl(e.target.value)}
-                placeholder="https://<account>.blob.core.windows.net/<container>?<sas>  (o  /<blob>.json?<sas>)"
-                aria-label="URL con SAS"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Puede ser SAS del container (sr=c) o del blob (sr=b). Debe permitir escritura (PUT) para poder crear/guardar.
-              </p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Persistencia</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">Azure SQL</p>
+              <p className="mt-1 text-sm text-slate-600">Los catálogos y operaciones se guardan por `tenantId`.</p>
             </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">URL pública (solo lectura) (opcional)</label>
-              <input
-                value={azurePublicUrl}
-                onChange={(e) => setAzurePublicUrl(e.target.value)}
-                placeholder="https://<account>.blob.core.windows.net/<container>/<blob>.json"
-                aria-label="URL pública"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Si la dejas vacía, se construirá automáticamente desde la URL con SAS + nombre del archivo.
-              </p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Autenticación</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">Microsoft Entra ID</p>
+              <p className="mt-1 text-sm text-slate-600">El acceso y la asignación de tenants dependen de tu sesión corporativa.</p>
             </div>
-
-            <div className="flex flex-col sm:flex-row gap-3 justify-end">
-              <button
-                onClick={() => saveAzureConnection({ reload: false })}
-                disabled={isSavingAzureConfig || isReloadingFromAzure}
-                className="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-60"
-                title="Guardar conexión"
-              >
-                <Save size={16} className="mr-2" />
-                {isSavingAzureConfig ? 'Guardando…' : 'Guardar conexión'}
-              </button>
-
-              <button
-                onClick={() => saveAzureConnection({ reload: true })}
-                disabled={isSavingAzureConfig || isReloadingFromAzure}
-                className="inline-flex items-center justify-center px-3 py-2 bg-gray-900 text-white rounded-md hover:bg-black disabled:opacity-60"
-                title="Guardar y recargar desde Azure"
-              >
-                <Database size={16} className="mr-2" />
-                {isReloadingFromAzure ? 'Recargando…' : 'Guardar y recargar'}
-              </button>
-
-              <button
-                onClick={handleCreateBlankRemoteJson}
-                disabled={isSavingAzureConfig || isReloadingFromAzure}
-                className="inline-flex items-center justify-center px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-60"
-                title="Crear JSON vacío en el Blob"
-              >
-                <Trash2 size={16} className="mr-2" />
-                Crear JSON vacío
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-500">
-              “Crear JSON vacío” crea un archivo mínimo: solo <span className="font-medium">courses</span>, <span className="font-medium">clients</span> e <span className="font-medium">invoices</span> (vacíos) + metadatos.
-              No incluye emisores, opciones de transferencia, numeración, notas legales, instructores, etc.
-            </p>
           </div>
         </div>
 
@@ -838,10 +728,202 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
           </div>
 
           <p className="text-xs text-gray-500 mt-3">
-            Recomendación: descarga el JSON antes de limpiar.
+            Recomendación: descarga el respaldo del tenant antes de limpiar sus datos.
           </p>
         </div>
         </>
+      )}
+
+      {showMarca && (
+        <div className="bg-white shadow-md rounded-lg p-6 mt-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Marca del espacio</h3>
+              <p className="text-sm text-gray-600">Personaliza colores y logo del tenant actual.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={resetBrandingDraft}
+                disabled={isSavingBranding}
+                className="inline-flex items-center px-3 py-2 border border-slate-200 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Restablecer
+              </button>
+              <button
+                onClick={saveBranding}
+                disabled={isSavingBranding || JSON.stringify(brandingDraft) === JSON.stringify(tenantBranding)}
+                className="brand-solid inline-flex items-center px-3 py-2 rounded-md text-sm font-medium disabled:opacity-60"
+              >
+                <Save size={16} className="mr-2" />
+                {isSavingBranding ? 'Guardando...' : 'Guardar marca'}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Vista previa</p>
+              <div
+                className="mt-4 overflow-hidden rounded-[1.5rem] border border-white/80 shadow-sm"
+                style={{
+                  backgroundImage: `radial-gradient(circle at top right, ${previewBranding.accentColor}22, transparent 35%), linear-gradient(180deg, ${previewBranding.surfaceColor} 0%, #f8fafc 100%)`,
+                }}
+              >
+                <div
+                  className="flex items-center gap-3 px-4 py-4"
+                  style={{ backgroundColor: previewBranding.primaryColor, color: '#ffffff' }}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white/95">
+                    {readLogoSource(previewBranding) ? (
+                      <img src={readLogoSource(previewBranding)} alt="Logo del tenant" className="h-full w-full object-contain p-2" />
+                    ) : (
+                      <span className="text-lg font-semibold text-slate-900">{(currentTenant?.name || 'T').slice(0, 1).toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-white/70">Tenant actual</p>
+                    <p className="text-sm font-semibold">{currentTenant?.name || 'Espacio personalizado'}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 px-4 py-4">
+                  <div className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: `${previewBranding.accentColor}22`, color: previewBranding.primaryColor }}>
+                    Experiencia personalizada
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Primario</p>
+                      <div className="mt-2 h-8 rounded-lg" style={{ backgroundColor: previewBranding.primaryColor }} />
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Acento</p>
+                      <div className="mt-2 h-8 rounded-lg" style={{ backgroundColor: previewBranding.accentColor }} />
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Fondo</p>
+                      <div className="mt-2 h-8 rounded-lg border border-slate-200" style={{ backgroundColor: previewBranding.surfaceColor }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Color primario</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={previewBranding.primaryColor}
+                      onChange={(e) => updateBrandingField('primaryColor', e.target.value)}
+                      className="h-11 w-14 rounded-md border border-slate-200 bg-white px-1"
+                    />
+                    <input
+                      value={brandingDraft.primaryColor}
+                      onChange={(e) => updateBrandingField('primaryColor', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Color acento</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={previewBranding.accentColor}
+                      onChange={(e) => updateBrandingField('accentColor', e.target.value)}
+                      className="h-11 w-14 rounded-md border border-slate-200 bg-white px-1"
+                    />
+                    <input
+                      value={brandingDraft.accentColor}
+                      onChange={(e) => updateBrandingField('accentColor', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Color de fondo</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={previewBranding.surfaceColor}
+                      onChange={(e) => updateBrandingField('surfaceColor', e.target.value)}
+                      className="h-11 w-14 rounded-md border border-slate-200 bg-white px-1"
+                    />
+                    <input
+                      value={brandingDraft.surfaceColor}
+                      onChange={(e) => updateBrandingField('surfaceColor', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">Logo</h4>
+                    <p className="text-xs text-slate-600">Puedes subir una imagen o usar una URL pública.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      ref={logoFileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      onChange={handleBrandLogoUpload}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => logoFileInputRef.current?.click()}
+                      type="button"
+                      className="inline-flex items-center px-3 py-2 border border-slate-200 rounded-md text-sm font-medium text-slate-700 hover:bg-white"
+                    >
+                      Subir logo
+                    </button>
+                    <button
+                      onClick={() => setBrandingDraft((prev) => ({ ...prev, logoDataUrl: '', logoUrl: '' }))}
+                      type="button"
+                      className="inline-flex items-center px-3 py-2 border border-slate-200 rounded-md text-sm font-medium text-slate-700 hover:bg-white"
+                    >
+                      Quitar logo
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-[140px_1fr]">
+                  <div className="flex h-28 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    {readLogoSource(previewBranding) ? (
+                      <img src={readLogoSource(previewBranding)} alt="Vista previa del logo" className="h-full w-full object-contain p-3" />
+                    ) : (
+                      <span className="text-sm text-slate-400">Sin logo</span>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">URL del logo</label>
+                    <input
+                      value={brandingDraft.logoUrl || ''}
+                      onChange={(e) =>
+                        setBrandingDraft((prev) => ({
+                          ...prev,
+                          logoUrl: e.target.value,
+                          logoDataUrl: '',
+                        }))
+                      }
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Si subes un archivo, se guardará embebido como Data URL para que cada tenant conserve su logo.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
         {/* Numeración de Facturas */}
@@ -1469,7 +1551,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ section, embedded }) =>
             </div>
 
             <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-800">
-              Esta acción borra TODOS los datos (cursos, clientes, facturas, instructores y calendarios) y los sobrescribe en Azure.
+              Esta acción borra TODOS los datos del tenant actual (cursos, clientes, facturas, instructores y calendarios) en Azure SQL.
               No se puede deshacer.
             </div>
 

@@ -3,7 +3,7 @@ import { Course, Client, Currency, Item } from '../types';
 import { loadCourses, loadClients, getAvailableCoursesForInvoicing, getNextInvoiceNumber, reserveNextInvoiceNumber, updateCourse } from '../utils/storage';
 import { FileText, Plus, X } from 'lucide-react';
 import { getCurrentDateForInput } from '../utils/dateUtils';
-import { formatHours, formatHourlyRate, formatCurrency } from '../utils/numberUtils';
+import { formatHours, formatCurrency } from '../utils/numberUtils';
 
 interface InvoiceFromCoursesProps {
   onGenerateInvoice: (items: Item[], clientData: Client, courseIds: string[], invoiceNumber: string, currency: Currency) => void;

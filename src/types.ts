@@ -133,4 +133,36 @@ export interface InvoiceFooterNote {
   en: string;
 }
 
+export interface TenantBranding {
+  primaryColor: string;
+  accentColor: string;
+  surfaceColor: string;
+  logoUrl?: string;
+  logoDataUrl?: string;
+}
+
+export interface TenantMembership {
+  tenantId: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
+export interface SessionUser {
+  userId: string;
+  email: string;
+  name: string;
+}
+
+export interface SessionResponse {
+  user: SessionUser;
+  memberships: TenantMembership[];
+  defaultTenantId: string | null;
+}
+
+export interface TenantMetadata {
+  sourceUrl?: string;
+  lastSeededAt?: string;
+}
+
 export const supportedCurrencies: readonly Currency[] = ['USD', 'COP', 'EUR'] as const;

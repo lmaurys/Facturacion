@@ -3,7 +3,6 @@ import { Client } from '../types';
 import ClientList from './ClientList';
 import ClientForm from './ClientForm';
 import { loadClients, addClient, updateClient, deleteClient } from '../utils/storage';
-import { initializeDefaultClients } from '../utils/defaultData';
 
 interface ClientManagementProps {
   embedded?: boolean;
@@ -16,30 +15,12 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ embedded }) => {
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
-    // Cargar clientes al montar el componente
     const loadClientsAsync = async () => {
       try {
-        console.log('🔄 ClientManagement: Cargando clientes...');
-        
-        // Primero cargar clientes existentes
         const loadedClients = await loadClients();
-        console.log(`📊 ClientManagement: ${loadedClients.length} clientes cargados`);
-        
-        // Solo inicializar clientes predeterminados si realmente no hay ninguno
-        if (loadedClients.length === 0) {
-          console.log('📝 ClientManagement: Inicializando clientes predeterminados...');
-          await initializeDefaultClients();
-          
-          // Recargar después de la inicialización
-          const reloadedClients = await loadClients();
-          setClients(reloadedClients);
-        } else {
-          setClients(loadedClients);
-        }
-        
-        console.log('✅ ClientManagement: Clientes cargados exitosamente');
+        setClients(loadedClients);
       } catch (error) {
-        console.error('❌ ClientManagement: Error cargando clientes:', error);
+        console.error('Error cargando clientes:', error);
         setClients([]);
       }
     };

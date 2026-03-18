@@ -7,8 +7,9 @@ import { invoiceLabels } from '../constants/invoiceConstants';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { formatCurrency, formatHours } from '../utils/numberUtils';
-import { getApplicableInvoiceFooterText, loadIssuerProfiles, loadTransferOptions } from '../utils/storage';
+import { getApplicableInvoiceFooterText, loadIssuerProfiles, loadTenantBranding, loadTransferOptions } from '../utils/storage';
 import defaultLogo from '../assets/MCT.png';
+import { readLogoSource } from '../utils/tenantBranding';
 
 interface InvoiceViewerProps {
   invoice: InvoiceFromCourse;
@@ -24,15 +25,18 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
   const [issuerProfiles, setIssuerProfiles] = React.useState<Array<{ id: string; name: string; nit: string; address: string; phone: string; city: string; email: string; logoDataUrl?: string; logoUrl?: string }>>([]);
   const [transferOptions, setTransferOptions] = React.useState<Array<{ id: string; bankName: string; bankAddress: string; country: string; swiftCode: string; routingNumber?: string; abaCode?: string; accountOwner: string; accountNumber: { es: string; en: string }; accountOwnerAddress: string }>>([]);
   const [footerText, setFooterText] = React.useState<string>('');
+  const [tenantLogoSrc, setTenantLogoSrc] = React.useState<string>('');
 
   React.useEffect(() => {
     const load = async () => {
-      const [issuers, transfers] = await Promise.all([
+      const [issuers, transfers, branding] = await Promise.all([
         loadIssuerProfiles(),
         loadTransferOptions(),
+        loadTenantBranding(),
       ]);
       setIssuerProfiles(issuers);
       setTransferOptions(transfers);
+      setTenantLogoSrc(readLogoSource(branding));
     };
     load();
   }, []);
@@ -58,7 +62,7 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
   const transferOptionId = ((invoice as any).transferOptionId || (invoice as any).transferOption) as string | undefined;
   const issuer = issuerId ? issuerProfiles.find(i => i.id === issuerId) : undefined;
   const transfer = transferOptionId ? transferOptions.find(o => o.id === transferOptionId) : undefined;
-  const issuerLogoSrc = (issuer?.logoDataUrl || issuer?.logoUrl || defaultLogo || '').trim();
+  const invoiceLogoSrc = (tenantLogoSrc || issuer?.logoDataUrl || issuer?.logoUrl || defaultLogo || '').trim();
 
   const waitForImages = async (root: HTMLElement): Promise<void> => {
     const imgs = Array.from(root.querySelectorAll('img')) as HTMLImageElement[];
@@ -167,9 +171,9 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
             <div className="bg-white rounded p-4 mb-4 text-[11px] font-sans w-full mx-auto">
               <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
                 <div className="flex items-center mb-4 sm:mb-0">
-                  {issuerLogoSrc ? (
+                  {invoiceLogoSrc ? (
                     <img
-                      src={issuerLogoSrc}
+                      src={invoiceLogoSrc}
                       alt="Logo"
                       crossOrigin="anonymous"
                       className="h-12 w-auto mr-3 object-contain"

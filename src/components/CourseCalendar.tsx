@@ -90,10 +90,10 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     return client ? client.name : 'Cliente no encontrado';
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency: string = 'USD') => {
     return new Intl.NumberFormat('es-ES', {
       style: 'currency',
-      currency: 'USD'
+      currency
     }).format(amount);
   };
 
