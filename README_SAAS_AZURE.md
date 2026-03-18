@@ -99,5 +99,4 @@ Ese chequeo confirma:
 
 - `GET /api/public-config` responde JSON y no HTML
 - la configuración de Entra viene con `clientId`, `tenantId` y `apiScope`
-- `Cache-Control` de esa ruta queda en `no-store`
 - `GET /api/health` responde con auth activa

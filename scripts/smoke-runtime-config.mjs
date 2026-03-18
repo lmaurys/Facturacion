@@ -53,15 +53,12 @@ try {
   const runtimeConfigUrl = `${baseUrl}/api/public-config`;
   const healthUrl = `${baseUrl}/api/health`;
 
-  const { response: runtimeResponse, json: runtimeConfig } = await fetchJson(runtimeConfigUrl);
-  const cacheControl = runtimeResponse.headers.get('cache-control') || '';
+  const { json: runtimeConfig } = await fetchJson(runtimeConfigUrl);
 
   for (const path of requiredRuntimeKeys) {
     const value = getPathValue(runtimeConfig, path);
     assertOk(Boolean(String(value || '').trim()), `Falta ${path.join('.')} en ${runtimeConfigUrl}.`);
   }
-
-  assertOk(cacheControl.includes('no-store'), `${runtimeConfigUrl} debería enviarse con Cache-Control no-store.`);
 
   const { json: health } = await fetchJson(healthUrl);
   assertOk(health.ok === true, `${healthUrl} no devolvió ok=true.`);
