@@ -483,7 +483,7 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                       <span className="font-medium">{formatHours(course.hours)}h</span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      {formatCurrency(course.hourlyRate, ((course as any).currency || 'USD'))}/h
+                      {formatCurrency(course.hourlyRate, ((course as any).currency || 'USD'), 'es-ES', 3)}/h
                     </div>
                   </td>
                   <td className="px-3 py-4">

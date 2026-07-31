@@ -116,7 +116,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoice, invoiceNumber,
                 <td className="px-2 py-1">{index + 1}</td>
                 <td className="px-2 py-1">{item.description}</td>
                 <td className="px-2 py-1 text-right">{formatHours(item.quantity)}</td>
-                <td className="px-2 py-1 text-right">{formatCurrency(item.unitPrice, invoice.currency)}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(item.unitPrice, invoice.currency, 'es-ES', 3)}</td>
                 <td className="px-2 py-1 text-right">{formatCurrency(item.quantity * item.unitPrice, invoice.currency)}</td>
               </tr>
             ))}

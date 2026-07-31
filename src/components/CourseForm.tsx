@@ -221,9 +221,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                     required
                     disabled={isPaidCourse}
                     min="0"
-                    step="0.0000000001"
-                    title={isPaidCourse ? "No se puede editar - Curso pagado" : "Valor por hora del curso (hasta 10 decimales)"}
-                    placeholder="Ej: 150.123456789"
+                    step="0.001"
+                    title={isPaidCourse ? "No se puede editar - Curso pagado" : "Valor por hora del curso (hasta 3 decimales)"}
+                    placeholder="Ej: 28.125"
                     className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isPaidCourse ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   />
                 </div>
@@ -464,4 +464,4 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
   );
 };
 
-export default CourseForm; 
+export default CourseForm;

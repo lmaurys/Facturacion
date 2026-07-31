@@ -42,6 +42,7 @@ import {
   readLogoSource,
   toRgba,
 } from './utils/tenantBranding';
+import { getAdditionalInvoiceItems } from './utils/invoiceItems';
 
 type AppMode = 'invoicing' | 'courses' | 'invoices' | 'analytics' | 'admin';
 
@@ -270,10 +271,8 @@ const AppBody: React.FC = () => {
       let manualItems = invoice.items;
       if (hasCourseIds) {
         const allCourses = await loadCourses();
-        const courseDescriptions = allCourses
-          .filter((course) => linkedCourseIds.includes(course.id))
-          .map((course) => `${course.courseName} (${course.startDate} - ${course.endDate})`);
-        manualItems = invoice.items.filter((item) => !courseDescriptions.includes(item.description));
+        const relatedCourses = allCourses.filter((course) => linkedCourseIds.includes(course.id));
+        manualItems = getAdditionalInvoiceItems(invoice.items, relatedCourses);
       }
 
       const invoiceData: Omit<InvoiceFromCourse, 'id'> = {

@@ -60,6 +60,10 @@ export interface Course {
   courseName: string;
   startDate: string;
   endDate: string;
+  weekdays?: string;
+  startTime?: string;
+  endTime?: string;
+  timeZone?: string;
   hours: number;
   hourlyRate: number;
   totalValue: number;

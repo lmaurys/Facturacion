@@ -4,6 +4,7 @@ import { loadClients, loadCourses, loadIssuerProfiles, loadTransferOptions, upda
 import { Edit2, X, Save, AlertCircle, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { invoiceLabels } from '../constants/invoiceConstants';
 import { formatCurrency } from '../utils/numberUtils';
+import { getAdditionalInvoiceItems } from '../utils/invoiceItems';
 
 interface InvoiceEditorProps {
   invoice: InvoiceFromCourse;
@@ -100,7 +101,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
       }));
 
       // Cargar items adicionales si existen
-      const additionalItems: AdditionalLineItem[] = (invoice.items || []).map((item, index) => ({
+      const additionalItems: AdditionalLineItem[] = getAdditionalInvoiceItems(invoice.items, relatedCourses).map((item, index) => ({
         type: 'item',
         id: `item-${index}`,
         description: item.description,
@@ -113,7 +114,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
     };
     
     loadData();
-  }, [invoice.courseIds]);
+  }, [invoice.courseIds, invoice.items]);
 
   // Mostrar FAB para subir dentro del modal cuando el contenido hace scroll
   useEffect(() => {
@@ -785,7 +786,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                             <input
                               type="number"
                               min="0"
-                              step="0.01"
+                              step="0.001"
                               value={item.hourlyRate}
                               onChange={(e) => handleItemChange(item.id, 'hourlyRate', Number(e.target.value))}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -797,7 +798,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                             <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                               <div className="flex justify-between items-center">
                                 <span className="text-sm font-medium text-blue-900">
-                                  Subtotal: {item.hours} hrs × {formatCurrency(item.hourlyRate, formData.currency)}/hr
+                                  Subtotal: {item.hours} hrs × {formatCurrency(item.hourlyRate, formData.currency, 'es-ES', 3)}/hr
                                 </span>
                                 <span className="text-lg font-bold text-blue-900">
                                   {formatCurrency(item.totalValue, formData.currency)}
@@ -845,7 +846,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                             <input
                               type="number"
                               min="0"
-                              step="0.01"
+                              step="0.001"
                               value={item.unitPrice}
                               onChange={(e) => handleItemChange(item.id, 'unitPrice', Number(e.target.value))}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -856,7 +857,7 @@ const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                           <div>
                             <div className="bg-green-50 border border-green-200 rounded-md p-3 h-full flex items-center justify-between">
                               <span className="text-sm font-medium text-green-900">
-                                Subtotal: {item.quantity} × {formatCurrency(item.unitPrice, formData.currency)}
+                                Subtotal: {item.quantity} × {formatCurrency(item.unitPrice, formData.currency, 'es-ES', 3)}
                               </span>
                               <span className="text-lg font-bold text-green-900">
                                 {formatCurrency(item.totalValue, formData.currency)}

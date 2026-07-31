@@ -7,6 +7,167 @@ interface CourseCalendarProps {
   onCourseClick?: (course: Course) => void;
 }
 
+type CalendarCourseWindow = {
+  startDate: string;
+  endDate: string;
+  startTime?: string;
+  endTime?: string;
+  timeZone: string;
+};
+
+type TimeZoneParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const CALENDAR_TIME_ZONE = 'America/Bogota';
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+const isIsoDate = (value?: string): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+
+const cleanTime = (value?: string): string | undefined => {
+  const match = value?.match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : undefined;
+};
+
+const getFormatter = (timeZone: string): Intl.DateTimeFormat => {
+  const cached = formatterCache.get(timeZone);
+  if (cached) return cached;
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  });
+  formatterCache.set(timeZone, formatter);
+  return formatter;
+};
+
+const getPartsInZone = (date: Date, timeZone: string): TimeZoneParts => {
+  const parts = Object.fromEntries(getFormatter(timeZone).formatToParts(date).map(part => [part.type, part.value]));
+  const hour = Number(parts.hour);
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: hour === 24 ? 0 : hour,
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+};
+
+const zonedLocalToUtc = (date: string, time: string, timeZone: string): Date | null => {
+  if (!isIsoDate(date)) return null;
+
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour = 0, minute = 0, second = 0] = time.split(':').map(Number);
+  const targetMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  let guessMs = targetMs;
+
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      const rendered = getPartsInZone(new Date(guessMs), timeZone);
+      const renderedMs = Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute, rendered.second);
+      const diff = targetMs - renderedMs;
+      if (diff === 0) break;
+      guessMs += diff;
+    }
+  } catch {
+    return null;
+  }
+
+  return new Date(guessMs);
+};
+
+const formatDateParts = (parts: TimeZoneParts): string =>
+  `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+
+const formatTimeParts = (parts: TimeZoneParts): string =>
+  `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+
+const getObservationValue = (observations: string | undefined, key: string): string | undefined => {
+  const match = observations?.match(new RegExp(`${key}=([^;]+)`));
+  return match?.[1]?.trim();
+};
+
+const getSourceSchedule = (course: Course): { startDate: string; startTime: string; endDate: string; endTime: string; timeZone: string } | null => {
+  const sourceSchedule = getObservationValue(course.observations, 'sourceSchedule');
+  const sourceTimeZone = getObservationValue(course.observations, 'sourceTimeZone');
+
+  if (sourceSchedule && sourceTimeZone) {
+    const match = sourceSchedule.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})-(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/);
+    if (match) {
+      return {
+        startDate: match[1],
+        startTime: cleanTime(match[2]) || '00:00',
+        endDate: match[3],
+        endTime: cleanTime(match[4]) || cleanTime(match[2]) || '00:00',
+        timeZone: sourceTimeZone,
+      };
+    }
+  }
+
+  if (course.timeZone && course.startTime) {
+    return {
+      startDate: course.startDate,
+      startTime: cleanTime(course.startTime) || '00:00',
+      endDate: course.endDate || course.startDate,
+      endTime: cleanTime(course.endTime) || cleanTime(course.startTime) || '00:00',
+      timeZone: course.timeZone,
+    };
+  }
+
+  return null;
+};
+
+const getCalendarCourseWindow = (course: Course): CalendarCourseWindow => {
+  const source = getSourceSchedule(course);
+  if (!source) {
+    return {
+      startDate: course.startDate,
+      endDate: course.endDate,
+      startTime: cleanTime(course.startTime),
+      endTime: cleanTime(course.endTime),
+      timeZone: course.timeZone || CALENDAR_TIME_ZONE,
+    };
+  }
+
+  const startUtc = zonedLocalToUtc(source.startDate, source.startTime, source.timeZone);
+  const endUtc = zonedLocalToUtc(source.endDate, source.endTime, source.timeZone);
+
+  if (!startUtc || !endUtc) {
+    return {
+      startDate: course.startDate,
+      endDate: course.endDate,
+      startTime: cleanTime(course.startTime),
+      endTime: cleanTime(course.endTime),
+      timeZone: course.timeZone || CALENDAR_TIME_ZONE,
+    };
+  }
+
+  const start = getPartsInZone(startUtc, CALENDAR_TIME_ZONE);
+  const end = getPartsInZone(endUtc, CALENDAR_TIME_ZONE);
+
+  return {
+    startDate: formatDateParts(start),
+    endDate: formatDateParts(end),
+    startTime: formatTimeParts(start),
+    endTime: formatTimeParts(end),
+    timeZone: CALENDAR_TIME_ZONE,
+  };
+};
+
 const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -124,7 +285,8 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
   // Función para calcular el valor proporcional por día
   const calculateDailyValue = (course: Course): number => {
-    const duration = calculateCourseDuration(course.startDate, course.endDate);
+    const courseWindow = getCalendarCourseWindow(course);
+    const duration = calculateCourseDuration(courseWindow.startDate, courseWindow.endDate);
     return course.totalValue / duration;
   };
 
@@ -183,8 +345,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
   // Filtrar cursos del mes actual
   const coursesInMonth = effectiveCourses.filter(course => {
-    const startDate = createLocalDate(course.startDate);
-    const endDate = createLocalDate(course.endDate);
+    const courseWindow = getCalendarCourseWindow(course);
+    const startDate = createLocalDate(courseWindow.startDate);
+    const endDate = createLocalDate(courseWindow.endDate);
     
     // Normalizar fechas para comparar solo año, mes y día
     const startDateNormalized = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
@@ -203,8 +366,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     const dayDateNormalized = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
     
     return coursesInMonth.filter(course => {
-      const startDate = createLocalDate(course.startDate);
-      const endDate = createLocalDate(course.endDate);
+      const courseWindow = getCalendarCourseWindow(course);
+      const startDate = createLocalDate(courseWindow.startDate);
+      const endDate = createLocalDate(courseWindow.endDate);
       
       // Normalizar las fechas del curso para comparar solo año, mes y día
       const startDateNormalized = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
@@ -217,8 +381,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
   // Días de un curso que caen dentro del mes visible
   const getOverlappingDaysInMonth = (course: Course): number => {
-    const start = createLocalDate(course.startDate);
-    const end = createLocalDate(course.endDate);
+    const courseWindow = getCalendarCourseWindow(course);
+    const start = createLocalDate(courseWindow.startDate);
+    const end = createLocalDate(courseWindow.endDate);
     const monthStart = new Date(firstDayOfMonth.getFullYear(), firstDayOfMonth.getMonth(), firstDayOfMonth.getDate());
     const monthEnd = new Date(lastDayOfMonth.getFullYear(), lastDayOfMonth.getMonth(), lastDayOfMonth.getDate());
     const overlapStart = start > monthStart ? start : monthStart;
@@ -512,43 +677,50 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
                     )}
 
                     <div className="space-y-1 mt-1">
-                      {coursesForDay.slice(0, 3).map(course => (
-                        <div
-                          key={course.id}
-                          onClick={() => onCourseClick && onCourseClick(course)}
-                          className={`text-xs p-2 rounded border cursor-pointer hover:shadow-sm transition-shadow ${getStatusColor(course.status)}`}
-                          title={`${course.courseName}
+                      {coursesForDay.slice(0, 3).map(course => {
+                        const courseWindow = getCalendarCourseWindow(course);
+                        const scheduleText = courseWindow.startTime && courseWindow.endTime
+                          ? `${courseWindow.startTime}-${courseWindow.endTime} ${courseWindow.timeZone}`
+                          : '';
+
+                        return (
+                          <div
+                            key={course.id}
+                            onClick={() => onCourseClick && onCourseClick(course)}
+                            className={`text-xs p-2 rounded border cursor-pointer hover:shadow-sm transition-shadow ${getStatusColor(course.status)}`}
+                            title={`${course.courseName}
 Cliente: ${getClientName(course.clientId)}
-Fechas: ${course.startDate} - ${course.endDate}
+Fechas: ${courseWindow.startDate} - ${courseWindow.endDate}${scheduleText ? `\nHorario: ${scheduleText}` : ''}
 Valor total: ${formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}
 Valor diario: ${formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}
 Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones: ${course.observations}` : ''}`}
-                        >
-                          <div className="font-medium truncate mb-1">
-                            {course.courseName}
-                          </div>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="truncate opacity-75 flex-1 mr-2">
-                              {getClientName(course.clientId)}
-                            </span>
-                            <span className={`px-1 py-0.5 rounded text-xs font-medium ${
-                              course.status === 'pagado' ? 'bg-green-200 text-green-800' :
-                              course.status === 'facturado' ? 'bg-blue-200 text-blue-800' :
-                              course.status === 'dictado' ? 'bg-yellow-200 text-yellow-800' :
-                              'bg-gray-200 text-gray-800'
-                            }`}>
-                              {course.status === 'pagado' ? 'P' :
-                               course.status === 'facturado' ? 'F' :
-                               course.status === 'dictado' ? 'D' : 'C'}
-                            </span>
-                          </div>
-                          <div className="text-right mt-1">
-                            <div className="text-xs font-bold">
-                              {formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}/día
+                          >
+                            <div className="font-medium truncate mb-1">
+                              {course.courseName}
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="truncate opacity-75 flex-1 mr-2">
+                                {scheduleText || getClientName(course.clientId)}
+                              </span>
+                              <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                                course.status === 'pagado' ? 'bg-green-200 text-green-800' :
+                                course.status === 'facturado' ? 'bg-blue-200 text-blue-800' :
+                                course.status === 'dictado' ? 'bg-yellow-200 text-yellow-800' :
+                                'bg-gray-200 text-gray-800'
+                              }`}>
+                                {course.status === 'pagado' ? 'P' :
+                                course.status === 'facturado' ? 'F' :
+                                course.status === 'dictado' ? 'D' : 'C'}
+                              </span>
+                            </div>
+                            <div className="text-right mt-1">
+                              <div className="text-xs font-bold">
+                                {formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}/día
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       
                       {coursesForDay.length > 3 && (
                         <div className="text-xs text-gray-500 text-center py-1">

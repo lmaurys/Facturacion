@@ -7,6 +7,7 @@ import { invoiceLabels } from '../constants/invoiceConstants';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { formatCurrency, formatHours } from '../utils/numberUtils';
+import { getAdditionalInvoiceItems } from '../utils/invoiceItems';
 import { getApplicableInvoiceFooterText, loadIssuerProfiles, loadTenantBranding, loadTransferOptions } from '../utils/storage';
 import defaultLogo from '../assets/MCT.png';
 import { readLogoSource } from '../utils/tenantBranding';
@@ -49,6 +50,7 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
 
   const dueDate = generateDate(invoice.paymentTerms);
   const t = invoiceLabels[invoice.language];
+  const additionalItems = getAdditionalInvoiceItems(invoice.items, courses);
 
   React.useEffect(() => {
     const loadFooter = async () => {
@@ -228,20 +230,20 @@ const InvoiceViewer: React.FC<InvoiceViewerProps> = ({ invoice, client, courses,
                         <td className="px-2 py-1 font-semibold">{index + 1}</td>
                         <td className="px-2 py-1 font-semibold">{`${course.courseName} (${course.startDate} - ${course.endDate})`}</td>
                         <td className="px-2 py-1 text-right font-semibold">{formatHours(course.hours)}</td>
-                        <td className="px-2 py-1 text-right font-semibold">{formatCurrency(course.hourlyRate, course.currency || invoice.currency)}</td>
+                        <td className="px-2 py-1 text-right font-semibold">{formatCurrency(course.hourlyRate, course.currency || invoice.currency, 'es-ES', 3)}</td>
                         <td className="px-2 py-1 text-right font-semibold">{formatCurrency(course.totalValue, course.currency || invoice.currency)}</td>
                       </tr>
                     ))}
                     {/* Render custom items after courses, visually distinct */}
-                    {(invoice.items?.map((item, idx) => (
+                    {additionalItems.map((item, idx) => (
                       <tr key={`custom-${idx}`} className="border-t border-gray-300 bg-yellow-50">
                         <td className="px-2 py-1">{courses.length + idx + 1}</td>
                         <td className="px-2 py-1">{item.description}</td>
                         <td className="px-2 py-1 text-right">{item.quantity}</td>
-                        <td className="px-2 py-1 text-right">{formatCurrency(item.unitPrice, invoice.currency)}</td>
+                        <td className="px-2 py-1 text-right">{formatCurrency(item.unitPrice, invoice.currency, 'es-ES', 3)}</td>
                         <td className="px-2 py-1 text-right">{formatCurrency(item.quantity * item.unitPrice, invoice.currency)}</td>
                       </tr>
-                    )) || [])}
+                    ))}
                   </tbody>
                 </table>
               </div>

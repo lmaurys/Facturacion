@@ -454,7 +454,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                 value={newItem.unitPrice}
                 onChange={handleItemChange}
                 min="0"
-                step="0.01"
+                step="0.001"
                 title={language === 'es' ? 'Precio unitario' : 'Unit price'}
                 required
               />
@@ -514,7 +514,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                       {item.quantity}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(item.unitPrice, invoice.currency)}
+                      {formatCurrency(item.unitPrice, invoice.currency, 'es-ES', 3)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {formatCurrency(item.quantity * item.unitPrice, invoice.currency)}

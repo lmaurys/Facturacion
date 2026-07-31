@@ -215,7 +215,7 @@ const InvoiceFromCourses: React.FC<InvoiceFromCoursesProps> = ({ onGenerateInvoi
                                 {course.startDate} - {course.endDate}
                               </p>
                               <p className="text-sm text-gray-600">
-                                {formatHours(course.hours)} horas × {formatCurrency(course.hourlyRate, course.currency)}/hora
+                                {formatHours(course.hours)} horas × {formatCurrency(course.hourlyRate, course.currency, 'es-ES', 3)}/hora
                               </p>
                             </div>
                             <div className="text-right">

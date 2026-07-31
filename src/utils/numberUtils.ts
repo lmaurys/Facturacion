@@ -9,24 +9,29 @@ export const formatHours = (hours: number): string => {
 };
 
 /**
- * Formatea el valor por hora con máximo 2 decimales para mostrar
+ * Formatea el valor por hora con máximo 3 decimales para mostrar
  */
 export const formatHourlyRate = (rate: number): string => {
   return rate.toLocaleString('es-ES', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 3
   });
 };
 
 /**
  * Formatea valores monetarios con máximo 2 decimales
  */
-export const formatCurrency = (amount: number, currency: string = 'USD', locale: string = 'es-ES'): string => {
+export const formatCurrency = (
+  amount: number,
+  currency: string = 'USD',
+  locale: string = 'es-ES',
+  maximumFractionDigits: number = 2,
+): string => {
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
+    maximumFractionDigits,
   }).format(amount);
 };
 
@@ -91,4 +96,4 @@ export const formatAmount = (amount: number): string => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2
   });
-}; 
+};
