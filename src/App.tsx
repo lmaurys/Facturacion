@@ -362,8 +362,8 @@ const AppBody: React.FC = () => {
     }
 
     return (
-      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <section className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-xl shadow-slate-900/5 backdrop-blur">
+      <div className="grid items-start gap-6 2xl:grid-cols-[minmax(560px,0.9fr)_minmax(720px,1.1fr)]">
+        <section className="min-w-0 rounded-[2rem] border border-white/70 bg-white/90 p-4 shadow-xl shadow-slate-900/5 backdrop-blur sm:p-6">
           <InvoiceForm
             invoice={invoice}
             updateInvoice={updateInvoiceDraft}
@@ -385,20 +385,31 @@ const AppBody: React.FC = () => {
           />
         </section>
 
-        <section className="space-y-4">
-          <div className="rounded-[2rem] border border-slate-200/80 bg-white/95 p-6 shadow-xl shadow-slate-900/5">
-            <div ref={visibleInvoiceRef} className="hidden xl:block">
-              <InvoicePreview
-                invoice={invoice}
-                invoiceNumber={invoiceNumber}
-                selectedIssuerId={selectedIssuerId}
-                language={language}
-                paymentTerms={paymentTerms}
-              />
+        <section className="min-w-0 space-y-4">
+          <div className="rounded-[2rem] border border-slate-200/80 bg-white/95 p-4 shadow-xl shadow-slate-900/5 sm:p-6">
+            <div className="mb-4 hidden items-center justify-between gap-4 lg:flex">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Vista previa de la factura</h2>
+                <p className="text-sm text-slate-500">Se actualiza automáticamente mientras completas los datos.</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                {invoice.items.length} {invoice.items.length === 1 ? 'ítem' : 'ítems'}
+              </span>
             </div>
-            <div className="xl:hidden">
+            <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-slate-100/80 p-3 lg:block">
+              <div ref={visibleInvoiceRef} className="min-w-[720px] overflow-hidden rounded-xl bg-white shadow-sm">
+                <InvoicePreview
+                  invoice={invoice}
+                  invoiceNumber={invoiceNumber}
+                  selectedIssuerId={selectedIssuerId}
+                  language={language}
+                  paymentTerms={paymentTerms}
+                />
+              </div>
+            </div>
+            <div className="lg:hidden">
               <p className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
-                La previsualización completa vive en escritorio para conservar el formato del PDF. Desde móvil puedes imprimir o exportar sin perder el layout.
+                La previsualización completa está disponible desde una pantalla más amplia para conservar el formato del PDF. Puedes exportarlo sin perder el diseño.
               </p>
             </div>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
@@ -467,7 +478,7 @@ const AppBody: React.FC = () => {
   return (
     <div className="min-h-screen text-slate-900" style={shellBackground}>
       <header className="z-40 border-b border-white/70 bg-white/80 backdrop-blur-xl lg:sticky lg:top-0">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-2 sm:gap-4 sm:px-6 sm:py-4 lg:px-8">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-2 sm:gap-4 sm:px-6 sm:py-4 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]" style={brandSoftPillStyle}>
@@ -563,7 +574,7 @@ const AppBody: React.FC = () => {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <nav className="-mx-4 mb-6 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 sm:pb-0">
           <div className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
             {navigation.map((item) => {
