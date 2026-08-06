@@ -4,11 +4,14 @@ import { loadCourses, loadClients, loadBlackouts, addBlackout, deleteBlackout, l
 import { ChevronLeft, ChevronRight, Calendar, User, DollarSign, Ban, Plus, Clock } from 'lucide-react';
 import {
   DEFAULT_COURSE_TIME_ZONE,
+  WEEK_CALENDAR_END_HOUR,
+  WEEK_CALENDAR_START_HOUR,
   countScheduledCourseDaysInRange,
   courseRunsOnDate,
   getCourseTimeRangeForZone,
   getCourseTimeZoneOptions,
   getCourseWeekdayLabel,
+  getWeekCalendarTop,
 } from '../utils/courseSchedule';
 
 interface CourseCalendarProps {
@@ -169,11 +172,12 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const weekDays = Array.from({ length: 7 }, (_, index) => (
     new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index)
   ));
-  const weekStartHour = 6;
-  const weekEndHour = 22;
   const hourHeight = 64;
-  const weekHours = Array.from({ length: weekEndHour - weekStartHour }, (_, index) => weekStartHour + index);
-  const weekGridHeight = (weekEndHour - weekStartHour) * hourHeight;
+  const weekHours = Array.from(
+    { length: WEEK_CALENDAR_END_HOUR - WEEK_CALENDAR_START_HOUR },
+    (_, index) => WEEK_CALENDAR_START_HOUR + index,
+  );
+  const weekGridHeight = (WEEK_CALENDAR_END_HOUR - WEEK_CALENDAR_START_HOUR) * hourHeight;
 
   // Crear array de días para el calendario
   const calendarDays = [];
@@ -238,7 +242,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
   const getCourseTop = (course: Course, date: Date): number => {
     const startMinutes = getCourseTimeRangeForZone(course, calendarTimeZone, date).startMinutes;
-    return Math.max(0, ((startMinutes - weekStartHour * 60) / 60) * hourHeight);
+    return getWeekCalendarTop(startMinutes, hourHeight);
   };
 
   const getCourseHeight = (course: Course, date: Date): number => {
@@ -671,10 +675,10 @@ Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones:
         </div>
       </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="max-h-[75vh] overflow-auto rounded-lg border border-gray-200 bg-white">
           <div className="min-w-[980px]">
-            <div className="grid grid-cols-[72px_repeat(7,minmax(120px,1fr))] border-b border-gray-200 bg-gray-50">
-              <div className="p-3 text-xs font-medium text-gray-500">Hora</div>
+            <div className="sticky top-0 z-20 grid grid-cols-[72px_repeat(7,minmax(120px,1fr))] border-b border-gray-200 bg-gray-50">
+              <div className="sticky left-0 z-30 bg-gray-50 p-3 text-xs font-medium text-gray-500">Hora</div>
               {weekDays.map(day => {
                 const isToday =
                   new Date().toDateString() === day.toDateString();
@@ -690,12 +694,12 @@ Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones:
             </div>
 
             <div className="grid grid-cols-[72px_repeat(7,minmax(120px,1fr))]">
-              <div className="relative border-r border-gray-200 bg-gray-50" style={{ height: weekGridHeight }}>
+              <div className="sticky left-0 z-10 border-r border-gray-200 bg-gray-50" style={{ height: weekGridHeight }}>
                 {weekHours.map(hour => (
                   <div
                     key={hour}
                     className="absolute left-0 right-0 border-t border-gray-200 px-2 pt-1 text-[11px] text-gray-500"
-                    style={{ top: (hour - weekStartHour) * hourHeight }}
+                    style={{ top: (hour - WEEK_CALENDAR_START_HOUR) * hourHeight }}
                   >
                     {String(hour).padStart(2, '0')}:00
                   </div>
@@ -710,7 +714,7 @@ Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones:
                       <div
                         key={hour}
                         className="absolute left-0 right-0 border-t border-gray-100"
-                        style={{ top: (hour - weekStartHour) * hourHeight }}
+                        style={{ top: (hour - WEEK_CALENDAR_START_HOUR) * hourHeight }}
                       />
                     ))}
 

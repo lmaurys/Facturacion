@@ -4,6 +4,7 @@ import {
   courseRunsOnDate,
   getCourseTimeRangeForZone,
   getCourseWeekdayLabel,
+  getWeekCalendarTop,
   isValidCourseTime,
   resolveCourseTimeZoneInput,
 } from './courseSchedule';
@@ -46,6 +47,18 @@ describe('programación semanal de cursos', () => {
     expect(range.endMinutes).toBe(9 * 60);
     expect(range.label).toContain('07:00 - 09:00');
     expect(range.label).toContain('origen Europe/Madrid');
+  });
+
+  it('posiciona correctamente clases antes de las 06:00 en una grilla de 24 horas', () => {
+    const earlyCourse = {
+      ...course,
+      startTime: '10:00',
+      endTime: '16:00',
+    };
+    const range = getCourseTimeRangeForZone(earlyCourse, 'America/Bogota', new Date(2026, 7, 10));
+
+    expect(range.startMinutes).toBe(3 * 60);
+    expect(getWeekCalendarTop(range.startMinutes, 64)).toBe(3 * 64);
   });
 
   it('resuelve ciudades conocidas y rechaza horas fuera de 24 horas', () => {

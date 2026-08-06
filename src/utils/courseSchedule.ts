@@ -111,6 +111,8 @@ export const COURSE_TIME_ZONE_OPTIONS: CourseTimeZoneOption[] = (() => {
 export const DEFAULT_COURSE_START_TIME = '08:00';
 export const DEFAULT_COURSE_END_TIME = '17:00';
 export const DEFAULT_COURSE_TIME_ZONE = 'America/Bogota';
+export const WEEK_CALENDAR_START_HOUR = 0;
+export const WEEK_CALENDAR_END_HOUR = 24;
 
 export const createLocalDate = (dateString: string): Date => {
   const [year, month, day] = dateString.split('-').map(Number);
@@ -228,6 +230,9 @@ export const parseTimeToMinutes = (time?: string): number => {
   const [hours, minutes] = resolvedTime.split(':').map(Number);
   return hours * 60 + minutes;
 };
+
+export const getWeekCalendarTop = (startMinutes: number, hourHeight: number): number =>
+  Math.max(0, ((startMinutes - WEEK_CALENDAR_START_HOUR * 60) / 60) * hourHeight);
 
 const formatLocalDateKey = (date: Date): string => {
   const year = date.getFullYear();
