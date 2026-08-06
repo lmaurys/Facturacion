@@ -1,172 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Course, Client, Blackout, Instructor } from '../types';
 import { loadCourses, loadClients, loadBlackouts, addBlackout, deleteBlackout, loadInstructors } from '../utils/storage';
-import { ChevronLeft, ChevronRight, Calendar, User, DollarSign, Ban, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, User, DollarSign, Ban, Plus, Clock } from 'lucide-react';
+import {
+  DEFAULT_COURSE_TIME_ZONE,
+  countScheduledCourseDaysInRange,
+  courseRunsOnDate,
+  getCourseTimeRangeForZone,
+  getCourseTimeZoneOptions,
+  getCourseWeekdayLabel,
+} from '../utils/courseSchedule';
 
 interface CourseCalendarProps {
   onCourseClick?: (course: Course) => void;
 }
-
-type CalendarCourseWindow = {
-  startDate: string;
-  endDate: string;
-  startTime?: string;
-  endTime?: string;
-  timeZone: string;
-};
-
-type TimeZoneParts = {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-  second: number;
-};
-
-const CALENDAR_TIME_ZONE = 'America/Bogota';
-const formatterCache = new Map<string, Intl.DateTimeFormat>();
-
-const isIsoDate = (value?: string): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
-
-const cleanTime = (value?: string): string | undefined => {
-  const match = value?.match(/^(\d{1,2}):(\d{2})/);
-  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : undefined;
-};
-
-const getFormatter = (timeZone: string): Intl.DateTimeFormat => {
-  const cached = formatterCache.get(timeZone);
-  if (cached) return cached;
-
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-    hourCycle: 'h23',
-  });
-  formatterCache.set(timeZone, formatter);
-  return formatter;
-};
-
-const getPartsInZone = (date: Date, timeZone: string): TimeZoneParts => {
-  const parts = Object.fromEntries(getFormatter(timeZone).formatToParts(date).map(part => [part.type, part.value]));
-  const hour = Number(parts.hour);
-
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: hour === 24 ? 0 : hour,
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  };
-};
-
-const zonedLocalToUtc = (date: string, time: string, timeZone: string): Date | null => {
-  if (!isIsoDate(date)) return null;
-
-  const [year, month, day] = date.split('-').map(Number);
-  const [hour = 0, minute = 0, second = 0] = time.split(':').map(Number);
-  const targetMs = Date.UTC(year, month - 1, day, hour, minute, second);
-  let guessMs = targetMs;
-
-  try {
-    for (let i = 0; i < 4; i += 1) {
-      const rendered = getPartsInZone(new Date(guessMs), timeZone);
-      const renderedMs = Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute, rendered.second);
-      const diff = targetMs - renderedMs;
-      if (diff === 0) break;
-      guessMs += diff;
-    }
-  } catch {
-    return null;
-  }
-
-  return new Date(guessMs);
-};
-
-const formatDateParts = (parts: TimeZoneParts): string =>
-  `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
-
-const formatTimeParts = (parts: TimeZoneParts): string =>
-  `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
-
-const getObservationValue = (observations: string | undefined, key: string): string | undefined => {
-  const match = observations?.match(new RegExp(`${key}=([^;]+)`));
-  return match?.[1]?.trim();
-};
-
-const getSourceSchedule = (course: Course): { startDate: string; startTime: string; endDate: string; endTime: string; timeZone: string } | null => {
-  const sourceSchedule = getObservationValue(course.observations, 'sourceSchedule');
-  const sourceTimeZone = getObservationValue(course.observations, 'sourceTimeZone');
-
-  if (sourceSchedule && sourceTimeZone) {
-    const match = sourceSchedule.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})-(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/);
-    if (match) {
-      return {
-        startDate: match[1],
-        startTime: cleanTime(match[2]) || '00:00',
-        endDate: match[3],
-        endTime: cleanTime(match[4]) || cleanTime(match[2]) || '00:00',
-        timeZone: sourceTimeZone,
-      };
-    }
-  }
-
-  if (course.timeZone && course.startTime) {
-    return {
-      startDate: course.startDate,
-      startTime: cleanTime(course.startTime) || '00:00',
-      endDate: course.endDate || course.startDate,
-      endTime: cleanTime(course.endTime) || cleanTime(course.startTime) || '00:00',
-      timeZone: course.timeZone,
-    };
-  }
-
-  return null;
-};
-
-const getCalendarCourseWindow = (course: Course): CalendarCourseWindow => {
-  const source = getSourceSchedule(course);
-  if (!source) {
-    return {
-      startDate: course.startDate,
-      endDate: course.endDate,
-      startTime: cleanTime(course.startTime),
-      endTime: cleanTime(course.endTime),
-      timeZone: course.timeZone || CALENDAR_TIME_ZONE,
-    };
-  }
-
-  const startUtc = zonedLocalToUtc(source.startDate, source.startTime, source.timeZone);
-  const endUtc = zonedLocalToUtc(source.endDate, source.endTime, source.timeZone);
-
-  if (!startUtc || !endUtc) {
-    return {
-      startDate: course.startDate,
-      endDate: course.endDate,
-      startTime: cleanTime(course.startTime),
-      endTime: cleanTime(course.endTime),
-      timeZone: course.timeZone || CALENDAR_TIME_ZONE,
-    };
-  }
-
-  const start = getPartsInZone(startUtc, CALENDAR_TIME_ZONE);
-  const end = getPartsInZone(endUtc, CALENDAR_TIME_ZONE);
-
-  return {
-    startDate: formatDateParts(start),
-    endDate: formatDateParts(end),
-    startTime: formatTimeParts(start),
-    endTime: formatTimeParts(end),
-    timeZone: CALENDAR_TIME_ZONE,
-  };
-};
 
 const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -182,6 +29,10 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const [blackoutsForDay, setBlackoutsForDay] = useState<Blackout[]>([]);
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('all');
+  const [calendarView, setCalendarView] = useState<'month' | 'week'>('month');
+  const [calendarTimeZone, setCalendarTimeZone] = useState<string>(() => localStorage.getItem('courseCalendarTimeZone') || DEFAULT_COURSE_TIME_ZONE);
+  const [calendarTimeZoneSearch, setCalendarTimeZoneSearch] = useState<string>(() => localStorage.getItem('courseCalendarTimeZone') || 'Bogota');
+  const calendarTimeZoneOptions = React.useMemo(() => getCourseTimeZoneOptions(calendarTimeZoneSearch, 8), [calendarTimeZoneSearch]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -246,6 +97,10 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     };
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem('courseCalendarTimeZone', calendarTimeZone);
+  }, [calendarTimeZone]);
+
   const getClientName = (clientId: string): string => {
     const client = clients.find(c => c.id === clientId);
     return client ? client.name : 'Cliente no encontrado';
@@ -274,20 +129,10 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     }
   };
 
-  // Función para calcular la duración del curso en días
-  const calculateCourseDuration = (startDate: string, endDate: string): number => {
-    const start = createLocalDate(startDate);
-    const end = createLocalDate(endDate);
-    const timeDiff = end.getTime() - start.getTime();
-    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
-    return daysDiff + 1; // +1 porque incluye tanto el día de inicio como el de fin
-  };
-
   // Función para calcular el valor proporcional por día
   const calculateDailyValue = (course: Course): number => {
-    const courseWindow = getCalendarCourseWindow(course);
-    const duration = calculateCourseDuration(courseWindow.startDate, courseWindow.endDate);
-    return course.totalValue / duration;
+    const duration = countScheduledCourseDaysInRange(course);
+    return duration > 0 ? course.totalValue / duration : 0;
   };
 
   const getStatusColor = (status: string) => {
@@ -318,6 +163,17 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const firstDayOfWeek = firstDayOfMonth.getDay();
   // Obtener el número de días en el mes
   const daysInMonth = lastDayOfMonth.getDate();
+  const weekStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+  weekStart.setDate(currentDate.getDate() - currentDate.getDay());
+  const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
+  const weekDays = Array.from({ length: 7 }, (_, index) => (
+    new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index)
+  ));
+  const weekStartHour = 6;
+  const weekEndHour = 22;
+  const hourHeight = 64;
+  const weekHours = Array.from({ length: weekEndHour - weekStartHour }, (_, index) => weekStartHour + index);
+  const weekGridHeight = (weekEndHour - weekStartHour) * hourHeight;
 
   // Crear array de días para el calendario
   const calendarDays = [];
@@ -345,9 +201,8 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
   // Filtrar cursos del mes actual
   const coursesInMonth = effectiveCourses.filter(course => {
-    const courseWindow = getCalendarCourseWindow(course);
-    const startDate = createLocalDate(courseWindow.startDate);
-    const endDate = createLocalDate(courseWindow.endDate);
+    const startDate = createLocalDate(course.startDate);
+    const endDate = createLocalDate(course.endDate);
     
     // Normalizar fechas para comparar solo año, mes y día
     const startDateNormalized = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
@@ -355,44 +210,49 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     const monthStart = new Date(firstDayOfMonth.getFullYear(), firstDayOfMonth.getMonth(), firstDayOfMonth.getDate());
     const monthEnd = new Date(lastDayOfMonth.getFullYear(), lastDayOfMonth.getMonth(), lastDayOfMonth.getDate());
     
-    // Verificar si el curso se superpone con el mes actual (inclusive)
-    return (startDateNormalized <= monthEnd && endDateNormalized >= monthStart);
+    // Verificar si el curso se superpone con el mes actual y tiene dias efectivos en ese mes.
+    return (
+      startDateNormalized <= monthEnd &&
+      endDateNormalized >= monthStart &&
+      countScheduledCourseDaysInRange(course, monthStart, monthEnd) > 0
+    );
   });
+
+  const coursesInWeek = effectiveCourses.filter(course =>
+    countScheduledCourseDaysInRange(course, weekStart, weekEnd) > 0
+  );
+
+  const displayedCourses = calendarView === 'week' ? coursesInWeek : coursesInMonth;
 
   // Obtener cursos para un día específico
   const getCoursesForDay = (day: number) => {
     const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    // Normalizar la fecha para comparar solo año, mes y día (sin horas)
-    const dayDateNormalized = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
-    
-    return coursesInMonth.filter(course => {
-      const courseWindow = getCalendarCourseWindow(course);
-      const startDate = createLocalDate(courseWindow.startDate);
-      const endDate = createLocalDate(courseWindow.endDate);
-      
-      // Normalizar las fechas del curso para comparar solo año, mes y día
-      const startDateNormalized = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-      const endDateNormalized = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-      
-      // Verificar si el día está dentro del rango del curso (inclusive)
-      return dayDateNormalized >= startDateNormalized && dayDateNormalized <= endDateNormalized;
-    });
+    return coursesInMonth.filter(course => courseRunsOnDate(course, dayDate));
+  };
+
+  const getCoursesForWeekDay = (date: Date) => {
+    return coursesInWeek
+      .filter(course => courseRunsOnDate(course, date))
+      .sort((a, b) => getCourseTimeRangeForZone(a, calendarTimeZone, date).startMinutes - getCourseTimeRangeForZone(b, calendarTimeZone, date).startMinutes);
+  };
+
+  const getCourseTop = (course: Course, date: Date): number => {
+    const startMinutes = getCourseTimeRangeForZone(course, calendarTimeZone, date).startMinutes;
+    return Math.max(0, ((startMinutes - weekStartHour * 60) / 60) * hourHeight);
+  };
+
+  const getCourseHeight = (course: Course, date: Date): number => {
+    const range = getCourseTimeRangeForZone(course, calendarTimeZone, date);
+    const startMinutes = range.startMinutes;
+    const endMinutes = range.endMinutes;
+    return Math.max(36, ((Math.max(endMinutes, startMinutes + 30) - startMinutes) / 60) * hourHeight);
   };
 
   // Días de un curso que caen dentro del mes visible
   const getOverlappingDaysInMonth = (course: Course): number => {
-    const courseWindow = getCalendarCourseWindow(course);
-    const start = createLocalDate(courseWindow.startDate);
-    const end = createLocalDate(courseWindow.endDate);
     const monthStart = new Date(firstDayOfMonth.getFullYear(), firstDayOfMonth.getMonth(), firstDayOfMonth.getDate());
     const monthEnd = new Date(lastDayOfMonth.getFullYear(), lastDayOfMonth.getMonth(), lastDayOfMonth.getDate());
-    const overlapStart = start > monthStart ? start : monthStart;
-    const overlapEnd = end < monthEnd ? end : monthEnd;
-    if (overlapEnd < overlapStart) return 0;
-    const diffMs = new Date(overlapEnd.getFullYear(), overlapEnd.getMonth(), overlapEnd.getDate()).getTime() -
-                   new Date(overlapStart.getFullYear(), overlapStart.getMonth(), overlapStart.getDate()).getTime();
-    // +1 día porque es inclusivo
-    return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+    return countScheduledCourseDaysInRange(course, monthStart, monthEnd);
   };
 
   // Valor del mes (prorrateado por días dentro del mes)
@@ -400,6 +260,13 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
     const daily = calculateDailyValue(course);
     const days = getOverlappingDaysInMonth(course);
     return daily * days;
+  };
+
+  const getDisplayedValueForCourse = (course: Course): number => {
+    if (calendarView === 'week') {
+      return calculateDailyValue(course) * countScheduledCourseDaysInRange(course, weekStart, weekEnd);
+    }
+    return getMonthlyValueForCourse(course);
   };
 
   // Blackouts del mes actual
@@ -455,7 +322,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
       const newDate = new Date(prev);
-      if (direction === 'prev') {
+      if (calendarView === 'week') {
+        newDate.setDate(prev.getDate() + (direction === 'prev' ? -7 : 7));
+      } else if (direction === 'prev') {
         newDate.setMonth(prev.getMonth() - 1);
       } else {
         newDate.setMonth(prev.getMonth() + 1);
@@ -480,6 +349,14 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   ];
 
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const periodLabel = calendarView === 'week'
+    ? `${weekStart.toLocaleDateString('es-ES')} - ${weekEnd.toLocaleDateString('es-ES')}`
+    : `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+
+  const selectCalendarTimeZone = (timeZone: string) => {
+    setCalendarTimeZone(timeZone);
+    setCalendarTimeZoneSearch(timeZone);
+  };
 
   if (loading) {
     return (
@@ -497,12 +374,12 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
   }
 
   return (
-    <div className="bg-white shadow-md rounded-lg p-6">
+    <div className="rounded-2xl bg-white p-4 shadow-md sm:p-5">
       {/* Header del calendario (sticky debajo del nav) */}
-      <div className="sticky top-16 z-30 bg-white flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6 py-2 -mx-2 px-2 sm:mx-0 sm:px-0 border-b border-gray-100">
+      <div className="sticky top-16 z-30 -mx-2 mb-5 flex flex-col gap-3 border-b border-gray-100 bg-white px-2 py-2 sm:mx-0 sm:px-0 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-center space-x-3 sm:space-x-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+            <h2 className="flex items-center text-xl font-bold text-gray-900 sm:text-2xl">
               <Calendar className="mr-3" size={24} />
               Calendario de Cursos
             </h2>
@@ -530,7 +407,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
               <ChevronLeft size={20} />
             </button>
             <h3 className="text-base sm:text-xl font-semibold text-gray-800 min-w-[140px] sm:min-w-[200px] text-center">
-              {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+              {periodLabel}
             </h3>
             <button
               onClick={() => navigateMonth('next')}
@@ -538,6 +415,22 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
               title="Mes siguiente"
             >
               <ChevronRight size={20} />
+            </button>
+          </div>
+          <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1">
+            <button
+              onClick={() => setCalendarView('month')}
+              className={`px-3 py-1 text-sm rounded ${calendarView === 'month' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              title="Ver calendario mensual"
+            >
+              Mes
+            </button>
+            <button
+              onClick={() => setCalendarView('week')}
+              className={`px-3 py-1 text-sm rounded ${calendarView === 'week' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              title="Ver calendario semanal por hora"
+            >
+              Semana
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -553,6 +446,42 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
                 <option key={inst.id} value={inst.id}>{inst.name}</option>
               ))}
             </select>
+          </div>
+          <div className="min-w-[240px] max-w-full rounded-2xl border border-blue-100 bg-blue-50/60 p-2">
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-blue-800">
+              Zona calendario
+            </label>
+            <input
+              type="search"
+              value={calendarTimeZoneSearch}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setCalendarTimeZoneSearch(nextValue);
+                const exact = calendarTimeZoneOptions.find(option => option.value === nextValue || option.label === nextValue);
+                if (exact) {
+                  setCalendarTimeZone(exact.value);
+                }
+              }}
+              placeholder="Bogota, Madrid, Miami..."
+              className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-sm focus:outline-none"
+            />
+            <div className="mt-2 flex max-w-[420px] gap-1.5 overflow-x-auto pb-1">
+              {calendarTimeZoneOptions.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectCalendarTimeZone(option.value)}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                    calendarTimeZone === option.value
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-blue-200 bg-white text-blue-800 hover:bg-blue-50'
+                  }`}
+                  title={option.value}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             onClick={() => setShowBlackoutForm(true)}
@@ -572,7 +501,7 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
               <Calendar className="h-6 w-6 text-blue-600" />
               <span className="ml-2 text-sm font-medium text-blue-600">Cursos</span>
             </div>
-            <span className="text-xl font-bold text-blue-900">{coursesInMonth.length}</span>
+            <span className="text-xl font-bold text-blue-900">{displayedCourses.length}</span>
           </div>
         </div>
         
@@ -584,9 +513,9 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
             </div>
             <span className="text-xl font-bold text-green-900">
               {(() => {
-                const totalsByCurrency = coursesInMonth.reduce((acc, course) => {
-                  const currency = ((course as any).currency || 'USD') as string;
-                  acc[currency] = (acc[currency] || 0) + getMonthlyValueForCourse(course);
+                const totalsByCurrency = displayedCourses.reduce((acc, course) => {
+                  const currency = course.currency || 'USD';
+                  acc[currency] = (acc[currency] || 0) + getDisplayedValueForCourse(course);
                   return acc;
                 }, {} as Record<string, number>);
 
@@ -611,13 +540,14 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
               <span className="ml-2 text-sm font-medium text-purple-600">Clientes</span>
             </div>
             <span className="text-xl font-bold text-purple-900">
-              {new Set(coursesInMonth.map(course => course.clientId)).size}
+              {new Set(displayedCourses.map(course => course.clientId)).size}
             </span>
           </div>
         </div>
       </div>
 
       {/* Calendario */}
+      {calendarView === 'month' ? (
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         {/* Encabezados de días */}
         <div className="grid grid-cols-7 bg-gray-50">
@@ -678,47 +608,52 @@ const CourseCalendar: React.FC<CourseCalendarProps> = ({ onCourseClick }) => {
 
                     <div className="space-y-1 mt-1">
                       {coursesForDay.slice(0, 3).map(course => {
-                        const courseWindow = getCalendarCourseWindow(course);
-                        const scheduleText = courseWindow.startTime && courseWindow.endTime
-                          ? `${courseWindow.startTime}-${courseWindow.endTime} ${courseWindow.timeZone}`
-                          : '';
-
+                        const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+                        const displayRange = getCourseTimeRangeForZone(course, calendarTimeZone, dayDate);
                         return (
-                          <div
-                            key={course.id}
-                            onClick={() => onCourseClick && onCourseClick(course)}
-                            className={`text-xs p-2 rounded border cursor-pointer hover:shadow-sm transition-shadow ${getStatusColor(course.status)}`}
-                            title={`${course.courseName}
+                        <div
+                          key={course.id}
+                          onClick={() => onCourseClick && onCourseClick(course)}
+                          className={`text-xs p-2 rounded border cursor-pointer hover:shadow-sm transition-shadow ${getStatusColor(course.status)}`}
+                          title={`${course.courseName}
 Cliente: ${getClientName(course.clientId)}
-Fechas: ${courseWindow.startDate} - ${courseWindow.endDate}${scheduleText ? `\nHorario: ${scheduleText}` : ''}
-Valor total: ${formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}
-Valor diario: ${formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}
+Fechas: ${course.startDate} - ${course.endDate}
+Dias: ${getCourseWeekdayLabel(course.weekdays)}
+Horario: ${displayRange.label}
+Valor total: ${formatCurrency(course.totalValue, course.currency || 'USD')}
+Valor diario: ${formatCurrency(calculateDailyValue(course), course.currency || 'USD')}
 Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones: ${course.observations}` : ''}`}
-                          >
-                            <div className="font-medium truncate mb-1">
-                              {course.courseName}
+                        >
+                          <div className="font-medium truncate mb-1">
+                            {course.courseName}
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate opacity-75 flex-1 mr-2">
+                              {getClientName(course.clientId)}
+                            </span>
+                            <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                              course.status === 'pagado' ? 'bg-green-200 text-green-800' :
+                              course.status === 'facturado' ? 'bg-blue-200 text-blue-800' :
+                              course.status === 'dictado' ? 'bg-yellow-200 text-yellow-800' :
+                              'bg-gray-200 text-gray-800'
+                            }`}>
+                              {course.status === 'pagado' ? 'P' :
+                               course.status === 'facturado' ? 'F' :
+                               course.status === 'dictado' ? 'D' : 'C'}
+                            </span>
+                          </div>
+                          <div className="text-right mt-1">
+                            <div className="text-[10px] opacity-75 truncate">
+                              {getCourseWeekdayLabel(course.weekdays)}
                             </div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="truncate opacity-75 flex-1 mr-2">
-                                {scheduleText || getClientName(course.clientId)}
-                              </span>
-                              <span className={`px-1 py-0.5 rounded text-xs font-medium ${
-                                course.status === 'pagado' ? 'bg-green-200 text-green-800' :
-                                course.status === 'facturado' ? 'bg-blue-200 text-blue-800' :
-                                course.status === 'dictado' ? 'bg-yellow-200 text-yellow-800' :
-                                'bg-gray-200 text-gray-800'
-                              }`}>
-                                {course.status === 'pagado' ? 'P' :
-                                course.status === 'facturado' ? 'F' :
-                                course.status === 'dictado' ? 'D' : 'C'}
-                              </span>
+                            <div className="text-[10px] opacity-75 truncate">
+                              {displayRange.label}
                             </div>
-                            <div className="text-right mt-1">
-                              <div className="text-xs font-bold">
-                                {formatCurrency(calculateDailyValue(course), ((course as any).currency || 'USD'))}/día
-                              </div>
+                            <div className="text-xs font-bold">
+                              {formatCurrency(calculateDailyValue(course), course.currency || 'USD')}/día
                             </div>
                           </div>
+                        </div>
                         );
                       })}
                       
@@ -735,6 +670,97 @@ Estado: ${getStatusText(course.status)}${course.observations ? `\nObservaciones:
           })}
         </div>
       </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <div className="min-w-[980px]">
+            <div className="grid grid-cols-[72px_repeat(7,minmax(120px,1fr))] border-b border-gray-200 bg-gray-50">
+              <div className="p-3 text-xs font-medium text-gray-500">Hora</div>
+              {weekDays.map(day => {
+                const isToday =
+                  new Date().toDateString() === day.toDateString();
+                return (
+                  <div key={day.toISOString()} className={`border-l border-gray-200 p-3 ${isToday ? 'bg-blue-50' : ''}`}>
+                    <div className="text-xs font-medium text-gray-500">{dayNames[day.getDay()]}</div>
+                    <div className={`text-sm font-semibold ${isToday ? 'text-blue-700' : 'text-gray-900'}`}>
+                      {day.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-[72px_repeat(7,minmax(120px,1fr))]">
+              <div className="relative border-r border-gray-200 bg-gray-50" style={{ height: weekGridHeight }}>
+                {weekHours.map(hour => (
+                  <div
+                    key={hour}
+                    className="absolute left-0 right-0 border-t border-gray-200 px-2 pt-1 text-[11px] text-gray-500"
+                    style={{ top: (hour - weekStartHour) * hourHeight }}
+                  >
+                    {String(hour).padStart(2, '0')}:00
+                  </div>
+                ))}
+              </div>
+
+              {weekDays.map(day => {
+                const dayCourses = getCoursesForWeekDay(day);
+                return (
+                  <div key={day.toISOString()} className="relative border-r border-gray-200 last:border-r-0" style={{ height: weekGridHeight }}>
+                    {weekHours.map(hour => (
+                      <div
+                        key={hour}
+                        className="absolute left-0 right-0 border-t border-gray-100"
+                        style={{ top: (hour - weekStartHour) * hourHeight }}
+                      />
+                    ))}
+
+                    {dayCourses.length === 0 && (
+                      <div className="absolute inset-x-2 top-3 text-center text-xs text-gray-400">
+                        Sin sesiones
+                      </div>
+                    )}
+
+                    {dayCourses.map((course, index) => {
+	                      const displayRange = getCourseTimeRangeForZone(course, calendarTimeZone, day);
+	                      const top = getCourseTop(course, day);
+	                      const height = getCourseHeight(course, day);
+	                      const overlappingOffset = index % 3;
+	                      return (
+                        <button
+                          key={`${course.id}-${day.toISOString()}`}
+                          type="button"
+                          onClick={() => onCourseClick && onCourseClick(course)}
+                          className={`absolute overflow-hidden rounded-md border p-2 text-left text-xs shadow-sm transition hover:shadow-md ${getStatusColor(course.status)}`}
+                          style={{
+                            top,
+                            height,
+                            left: 6 + overlappingOffset * 8,
+                            right: 6,
+                            zIndex: 10 + index,
+                          }}
+                          title={`${course.courseName}
+Cliente: ${getClientName(course.clientId)}
+Horario: ${displayRange.label}
+Dias: ${getCourseWeekdayLabel(course.weekdays)}
+Estado: ${getStatusText(course.status)}`}
+                        >
+	                          <div className="flex items-center gap-1 font-semibold">
+	                            <Clock size={12} />
+	                            <span>{displayRange.label}</span>
+	                          </div>
+	                          <div className="mt-1 truncate font-medium">{course.courseName}</div>
+	                          <div className="truncate opacity-75">{getClientName(course.clientId)}</div>
+	                          <div className="mt-1 truncate text-[10px] opacity-75">Vista: {calendarTimeZone}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBlackoutForm && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">

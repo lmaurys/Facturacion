@@ -4,6 +4,7 @@ import { Edit2, Trash2, Plus, Calendar, DollarSign, Clock, Search, Filter, Arrow
 import { loadClients, loadInstructors } from '../utils/storage';
 import { formatDate } from '../utils/dateUtils';
 import { formatHours, formatCurrency } from '../utils/numberUtils';
+import { formatCourseTimeRange, getCourseWeekdayLabel } from '../utils/courseSchedule';
 
 interface CourseListProps {
   courses: Course[];
@@ -177,7 +178,7 @@ const CourseList: React.FC<CourseListProps> = ({ courses, onEdit, onDelete, onAd
 Curso: ${course.courseName}
 Cliente: ${getClientName(course.clientId)}
 Estado actual: ${statusName}
-Valor: ${formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}
+Valor: ${formatCurrency(course.totalValue, course.currency || 'USD')}
 
 Este curso está en estado "${statusName}" y no puede ser eliminado.
 Solo los cursos que no han sido dictados, facturados o pagados pueden eliminarse.
@@ -326,12 +327,14 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                     <div className="text-sm font-semibold text-gray-900">{course.courseName}</div>
                     <div className="text-xs text-gray-600 mt-1">{getClientName(course.clientId)}</div>
                     <div className="text-xs text-gray-600">{formatDate(course.startDate)} → {formatDate(course.endDate)}</div>
+                    <div className="text-xs text-gray-500">{getCourseWeekdayLabel(course.weekdays)}</div>
+                    <div className="text-xs text-gray-500">{formatCourseTimeRange(course)}</div>
                     {course.observations && (
                       <div className="text-[11px] text-gray-500 mt-1">{course.observations}</div>
                     )}
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold">{formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}</div>
+                    <div className="text-sm font-bold">{formatCurrency(course.totalValue, course.currency || 'USD')}</div>
                     <span className={`${getStatusBadge(course.status)}`}>{getStatusText(course.status)}</span>
                   </div>
                 </div>
@@ -475,6 +478,12 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                         <span className="font-medium">Fin:</span>
                       </div>
                       <div>{formatDate(course.endDate)}</div>
+                      <div className="mt-2 text-gray-500">
+                        {getCourseWeekdayLabel(course.weekdays)}
+                      </div>
+                      <div className="mt-1 text-gray-500">
+                        {formatCourseTimeRange(course)}
+                      </div>
                     </div>
                   </td>
                   <td className="px-3 py-4">
@@ -483,17 +492,17 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                       <span className="font-medium">{formatHours(course.hours)}h</span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      {formatCurrency(course.hourlyRate, ((course as any).currency || 'USD'), 'es-ES', 3)}/h
+                      {formatCurrency(course.hourlyRate, course.currency || 'USD', 'es-ES', 3)}/h
                     </div>
                   </td>
                   <td className="px-3 py-4">
                     <div className="text-sm font-medium text-gray-900 flex items-center mb-1">
                       <DollarSign className="mr-1" size={14} />
                       <div>
-                        <div className="font-bold">{formatCurrency(course.totalValue, ((course as any).currency || 'USD'))}</div>
+                        <div className="font-bold">{formatCurrency(course.totalValue, course.currency || 'USD')}</div>
                         {course.status === 'pagado' && course.paidAmount > 0 && (
                           <div className="text-xs text-green-600 mt-1">
-                            Pagado: {formatCurrency(course.paidAmount, ((course as any).currency || 'USD'))}
+                            Pagado: {formatCurrency(course.paidAmount, course.currency || 'USD')}
                           </div>
                         )}
                       </div>
