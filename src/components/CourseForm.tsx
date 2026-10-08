@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Course, Client, Currency, Instructor, supportedCurrencies } from '../types';
-import { X, Save, ArrowUp, Calendar } from 'lucide-react';
+import { X, Save, ArrowUp, Calendar, CalendarX2, Plus } from 'lucide-react';
 import { loadClients, loadInstructors } from '../utils/storage';
+import { formatDate } from '../utils/dateUtils';
 import {
   COURSE_WEEKDAYS,
   COURSE_WEEKDAY_VALUES,
@@ -11,6 +12,7 @@ import {
   getCourseTimeZoneOptions,
   getCourseWeekdayLabel,
   isValidCourseTime,
+  normalizeCourseExcludedDates,
   normalizeCourseWeekdays,
   parseTimeToMinutes,
   resolveCourseTimeZoneInput,
@@ -29,6 +31,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     startDate: '',
     endDate: '',
     weekdays: [...COURSE_WEEKDAY_VALUES],
+    excludedDates: [],
     startTime: DEFAULT_COURSE_START_TIME,
     endTime: DEFAULT_COURSE_END_TIME,
     timeZone: DEFAULT_COURSE_TIME_ZONE,
@@ -49,6 +52,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
   const [clients, setClients] = useState<Client[]>([]);
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [timeZoneSearch, setTimeZoneSearch] = useState('Bogota');
+  const [excludedDate, setExcludedDate] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   
@@ -88,6 +92,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
         ...editableCourse,
         currency: (course.currency || 'USD') as Currency,
         weekdays: normalizeCourseWeekdays(course.weekdays),
+        excludedDates: normalizeCourseExcludedDates(course.excludedDates),
         startTime: course.startTime || DEFAULT_COURSE_START_TIME,
         endTime: course.endTime || DEFAULT_COURSE_END_TIME,
         timeZone: course.timeZone || DEFAULT_COURSE_TIME_ZONE,
@@ -128,6 +133,41 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
     setFormData(prev => ({ ...prev, weekdays: [...COURSE_WEEKDAY_VALUES] }));
   };
 
+  const addExcludedDate = () => {
+    if (isPaidCourse || !excludedDate) return;
+
+    if (!formData.startDate || !formData.endDate || excludedDate < formData.startDate || excludedDate > formData.endDate) {
+      alert('La fecha sin clase debe estar dentro del rango del curso.');
+      return;
+    }
+
+    const date = new Date(`${excludedDate}T00:00:00`);
+    if (!getSelectedWeekdays(formData.weekdays).includes(date.getDay())) {
+      alert('Esa fecha no corresponde a uno de los días de clase seleccionados.');
+      return;
+    }
+
+    const current = normalizeCourseExcludedDates(formData.excludedDates);
+    if (current.includes(excludedDate)) {
+      alert('Esta fecha ya está marcada como día sin clase.');
+      return;
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      excludedDates: [...current, excludedDate].sort(),
+    }));
+    setExcludedDate('');
+  };
+
+  const removeExcludedDate = (date: string) => {
+    if (isPaidCourse) return;
+    setFormData(prev => ({
+      ...prev,
+      excludedDates: normalizeCourseExcludedDates(prev.excludedDates).filter(item => item !== date),
+    }));
+  };
+
   const selectTimeZone = (timeZone: string) => {
     if (isPaidCourse) return;
     setFormData(prev => ({ ...prev, timeZone }));
@@ -160,7 +200,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
       return;
     }
 
-    const courseToSave = { ...formData, weekdays, timeZone: resolvedTimeZone };
+    const excludedDates = normalizeCourseExcludedDates(formData.excludedDates).filter(date => {
+      const localDate = new Date(`${date}T00:00:00`);
+      return date >= formData.startDate && date <= formData.endDate && weekdays.includes(localDate.getDay());
+    });
+    const courseToSave = { ...formData, weekdays, excludedDates, timeZone: resolvedTimeZone };
 
     // si no hay instructor seleccionado pero existe uno activo por defecto, asignarlo
     if (!formData.instructorId && instructors.length > 0) {
@@ -313,6 +357,57 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSave, onCancel, isEdi
                 <p className="mt-2 text-xs text-gray-500">
                   Se programará en: {getSelectedWeekdays(formData.weekdays).length > 0 ? getCourseWeekdayLabel(formData.weekdays) : 'Ningún día seleccionado'}
                 </p>
+              </div>
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <CalendarX2 size={16} className="text-amber-700" />
+                  <label className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                    Fechas sin clase
+                  </label>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="date"
+                    value={excludedDate}
+                    min={formData.startDate || undefined}
+                    max={formData.endDate || undefined}
+                    onChange={event => setExcludedDate(event.target.value)}
+                    disabled={isPaidCourse || !formData.startDate || !formData.endDate}
+                    title="Fecha específica que no tendrá clase"
+                    className={`min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm focus:outline-none ${isPaidCourse ? 'cursor-not-allowed bg-slate-100' : ''}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={addExcludedDate}
+                    disabled={isPaidCourse || !excludedDate}
+                    className="inline-flex items-center justify-center rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus size={15} className="mr-1" />
+                    Omitir fecha
+                  </button>
+                </div>
+                {normalizeCourseExcludedDates(formData.excludedDates).length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {normalizeCourseExcludedDates(formData.excludedDates).map(date => (
+                      <span key={date} className="inline-flex items-center rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-900">
+                        {formatDate(date)}
+                        <button
+                          type="button"
+                          onClick={() => removeExcludedDate(date)}
+                          disabled={isPaidCourse}
+                          className="ml-2 rounded-full text-amber-600 hover:text-red-600 disabled:cursor-not-allowed"
+                          aria-label={`Restaurar clase del ${formatDate(date)}`}
+                          title="Quitar esta excepción"
+                        >
+                          <X size={13} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-amber-800">Agrega aquí festivos o fechas específicas en las que este curso no tendrá clase.</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

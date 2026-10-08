@@ -119,6 +119,13 @@ export const createLocalDate = (dateString: string): Date => {
   return new Date(year, month - 1, day);
 };
 
+export const formatLocalDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const normalizeCourseWeekdays = (weekdays?: number[]): number[] => {
   if (!Array.isArray(weekdays) || weekdays.length === 0) {
     return [...COURSE_WEEKDAY_VALUES];
@@ -130,12 +137,24 @@ export const normalizeCourseWeekdays = (weekdays?: number[]): number[] => {
     .sort((a, b) => a - b);
 };
 
+export const normalizeCourseExcludedDates = (excludedDates?: string[]): string[] => {
+  if (!Array.isArray(excludedDates)) return [];
+
+  return Array.from(new Set(excludedDates))
+    .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort();
+};
+
 export const courseRunsOnDate = (course: Course, date: Date): boolean => {
   const startDate = createLocalDate(course.startDate);
   const endDate = createLocalDate(course.endDate);
   const dayDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
   if (dayDate < startDate || dayDate > endDate) {
+    return false;
+  }
+
+  if (normalizeCourseExcludedDates(course.excludedDates).includes(formatLocalDateKey(dayDate))) {
     return false;
   }
 
@@ -153,11 +172,12 @@ export const countScheduledCourseDaysInRange = (course: Course, rangeStart?: Dat
   }
 
   const weekdays = normalizeCourseWeekdays(course.weekdays);
+  const excludedDates = new Set(normalizeCourseExcludedDates(course.excludedDates));
   let count = 0;
   const current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
 
   while (current <= end) {
-    if (weekdays.includes(current.getDay())) {
+    if (weekdays.includes(current.getDay()) && !excludedDates.has(formatLocalDateKey(current))) {
       count += 1;
     }
     current.setDate(current.getDate() + 1);
@@ -233,13 +253,6 @@ export const parseTimeToMinutes = (time?: string): number => {
 
 export const getWeekCalendarTop = (startMinutes: number, hourHeight: number): number =>
   Math.max(0, ((startMinutes - WEEK_CALENDAR_START_HOUR * 60) / 60) * hourHeight);
-
-const formatLocalDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 const getTimeZoneParts = (date: Date, timeZone: string): Record<string, number> => {
   const formatter = new Intl.DateTimeFormat('en-US', {

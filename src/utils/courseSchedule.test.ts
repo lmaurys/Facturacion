@@ -40,6 +40,20 @@ describe('programación semanal de cursos', () => {
     expect(getCourseWeekdayLabel(course.weekdays)).toBe('Lun, Mie, Vie');
   });
 
+  it('excluye una fecha específica del curso y del total de sesiones', () => {
+    const courseWithHoliday: Course = {
+      ...course,
+      startDate: '2026-09-28',
+      endDate: '2026-10-26',
+      weekdays: [1, 3],
+      excludedDates: ['2026-10-12'],
+    };
+
+    expect(courseRunsOnDate(courseWithHoliday, new Date(2026, 9, 12))).toBe(false);
+    expect(courseRunsOnDate(courseWithHoliday, new Date(2026, 9, 14))).toBe(true);
+    expect(countScheduledCourseDaysInRange(courseWithHoliday)).toBe(8);
+  });
+
   it('convierte el horario a la zona elegida para el calendario', () => {
     const range = getCourseTimeRangeForZone(course, 'America/Bogota', new Date(2026, 7, 3));
 

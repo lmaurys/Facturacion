@@ -61,6 +61,7 @@ export interface Course {
   startDate: string;
   endDate: string;
   weekdays?: number[];
+  excludedDates?: string[];
   startTime?: string;
   endTime?: string;
   timeZone?: string;

@@ -329,6 +329,9 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                     <div className="text-xs text-gray-600">{formatDate(course.startDate)} → {formatDate(course.endDate)}</div>
                     <div className="text-xs text-gray-500">{getCourseWeekdayLabel(course.weekdays)}</div>
                     <div className="text-xs text-gray-500">{formatCourseTimeRange(course)}</div>
+                    {course.excludedDates && course.excludedDates.length > 0 && (
+                      <div className="text-xs text-amber-700">Sin clase: {course.excludedDates.map(formatDate).join(', ')}</div>
+                    )}
                     {course.observations && (
                       <div className="text-[11px] text-gray-500 mt-1">{course.observations}</div>
                     )}
@@ -484,6 +487,11 @@ Si necesitas hacer cambios, edita el curso en lugar de eliminarlo.`);
                       <div className="mt-1 text-gray-500">
                         {formatCourseTimeRange(course)}
                       </div>
+                      {course.excludedDates && course.excludedDates.length > 0 && (
+                        <div className="mt-1 text-amber-700">
+                          Sin clase: {course.excludedDates.map(formatDate).join(', ')}
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-4">
