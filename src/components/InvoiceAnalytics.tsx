@@ -11,6 +11,8 @@ import {
 } from '../types';
 import { loadInvoices, loadClients, loadCourses, loadInstructors, loadTransferOptions } from '../utils/storage';
 import { formatCurrencyNoDecimals } from '../utils/numberUtils';
+import { formatDate } from '../utils/dateUtils';
+import { getInvoicePaymentSchedule } from '../utils/invoicePaymentSchedule';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, DollarSign, FileText, Users, Calendar, BarChart3, Eye } from 'lucide-react';
 import InvoiceViewer from './InvoiceViewer';
@@ -37,6 +39,16 @@ interface AnalyticsData {
     amount: number;
     dueDate: string;
     daysOverdue: number;
+    status: string;
+  }>;
+  pendingInvoices: Array<{
+    invoiceId: string;
+    invoiceNumber: string;
+    clientId: string;
+    clientName: string;
+    amount: number;
+    expectedPaymentDate: string;
+    daysUntilPayment: number;
     status: string;
   }>;
 
@@ -75,7 +87,7 @@ const InvoiceAnalytics: React.FC = () => {
     // Cursos del año y filtrado por instructor (si aplica)
     const yearCoursesAll = courses
       .filter(course => getYear(course.startDate) === selectedYear)
-      .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
+      .filter(course => (course.currency || 'USD') === selectedCurrency);
     const yearCourses = selectedInstructorId === 'all' 
       ? yearCoursesAll 
       : yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
@@ -85,7 +97,7 @@ const InvoiceAnalytics: React.FC = () => {
     // Facturas del año y filtradas por cursos del instructor (si aplica)
     const yearInvoicesAll = invoices
       .filter(invoice => getYear(invoice.invoiceDate) === selectedYear)
-      .filter(invoice => (((invoice as any).currency || 'USD') as Currency) === selectedCurrency);
+      .filter(invoice => (invoice.currency || 'USD') === selectedCurrency);
 
     // Fallback de relación: si una factura no tiene courseIds (factura tradicional), intentar inferir cursos
     // por invoiceNumber + clientId + año para que aparezca en filtro por instructor si corresponde.
@@ -225,49 +237,62 @@ const InvoiceAnalytics: React.FC = () => {
     });
     const byInstructor = Array.from(byInstructorMap.values()).sort((a, b) => b.totalValue - a.totalValue);
 
-    // 6. Facturas vencidas (facturas enviadas con fecha de vencimiento pasada)
+    // 6. Facturas vencidas y pendientes, según fecha de factura + términos de pago
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const overdueInvoices = yearInvoices
-      .filter(invoice => {
-        if (invoice.status === 'paid') return false; // No incluir facturas pagadas
-        
-        // Calcular fecha de vencimiento (fecha factura + términos de pago)
-        const invoiceDate = new Date(invoice.invoiceDate);
-        const dueDate = new Date(invoiceDate);
-        dueDate.setDate(dueDate.getDate() + invoice.paymentTerms);
-        dueDate.setHours(0, 0, 0, 0);
-        
-        return dueDate < today;
-      })
+
+    const openInvoices = yearInvoices
+      .filter(invoice => invoice.status !== 'paid')
       .map(invoice => {
         const client = clients.find(c => c.id === invoice.clientId);
-        const invoiceDate = new Date(invoice.invoiceDate);
-        const dueDate = new Date(invoiceDate);
-        dueDate.setDate(dueDate.getDate() + invoice.paymentTerms);
-        
-        const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-        
+        const schedule = getInvoicePaymentSchedule(invoice.invoiceDate, invoice.paymentTerms, today);
+
         return {
           invoiceId: invoice.id,
           invoiceNumber: invoice.invoiceNumber,
           clientId: invoice.clientId,
           clientName: client?.name || 'Cliente no encontrado',
           amount: invoice.total,
-          dueDate: dueDate.toISOString().split('T')[0],
-          daysOverdue,
-          status: invoice.status
+          status: invoice.status,
+          ...schedule,
         };
-      })
+      });
+
+    const overdueInvoices = openInvoices
+      .filter(invoice => invoice.isOverdue)
+      .map(invoice => ({
+        invoiceId: invoice.invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        clientId: invoice.clientId,
+        clientName: invoice.clientName,
+        amount: invoice.amount,
+        dueDate: invoice.expectedPaymentDate,
+        daysOverdue: Math.abs(invoice.daysUntilPayment),
+        status: invoice.status,
+      }))
       .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+    const pendingInvoices = openInvoices
+      .filter(invoice => !invoice.isOverdue)
+      .map(invoice => ({
+        invoiceId: invoice.invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        clientId: invoice.clientId,
+        clientName: invoice.clientName,
+        amount: invoice.amount,
+        expectedPaymentDate: invoice.expectedPaymentDate,
+        daysUntilPayment: invoice.daysUntilPayment,
+        status: invoice.status,
+      }))
+      .sort((a, b) => a.daysUntilPayment - b.daysUntilPayment || a.invoiceNumber.localeCompare(b.invoiceNumber));
 
     // 7. Discriminación por destino de transferencia
     const transferLabelById = new Map<string, string>(transferOptions.map(t => [t.id, t.label]));
     const transferMap = new Map<TransferOptionId, { received: number; expected: number; paidCount: number; openCount: number }>;
 
     yearInvoices.forEach(inv => {
-      const opt = (((inv as any).transferOptionId || (inv as any).transferOption || '') as TransferOptionId);
+      const legacyInvoice = inv as InvoiceFromCourse & { transferOption?: TransferOptionId };
+      const opt = legacyInvoice.transferOptionId || legacyInvoice.transferOption || '';
       const agg = transferMap.get(opt) || { received: 0, expected: 0, paidCount: 0, openCount: 0 };
 
       if (inv.status === 'paid') {
@@ -301,6 +326,7 @@ const InvoiceAnalytics: React.FC = () => {
       coursesStatusDistribution,
       byInstructor,
       overdueInvoices,
+      pendingInvoices,
       transferByDestination
     });
   }, [invoices, clients, courses, instructors, selectedYear, selectedInstructorId, selectedCurrency, transferOptions, getYear, getMonthIndex]);
@@ -343,7 +369,7 @@ const InvoiceAnalytics: React.FC = () => {
     return () => window.removeEventListener('transferOptionUpdated', onTransferUpdated);
   }, []);
 
-  const handleViewOverdueInvoice = (invoiceId: string) => {
+  const handleViewInvoice = (invoiceId: string) => {
     const invoice = invoices.find(i => i.id === invoiceId);
     if (!invoice) {
       alert('Factura no encontrada.');
@@ -380,11 +406,11 @@ const InvoiceAnalytics: React.FC = () => {
   const getTotalInvoices = () => {
   const yearInvoicesAll = invoices
     .filter(inv => getYear(inv.invoiceDate) === selectedYear)
-    .filter(inv => (((inv as any).currency || 'USD') as Currency) === selectedCurrency);
+    .filter(inv => (inv.currency || 'USD') === selectedCurrency);
     if (selectedInstructorId === 'all') return yearInvoicesAll.length;
   const yearCoursesAll = courses
     .filter(course => getYear(course.startDate) === selectedYear)
-    .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
+    .filter(course => (course.currency || 'USD') === selectedCurrency);
     const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
     return yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id))).length;
@@ -393,11 +419,11 @@ const InvoiceAnalytics: React.FC = () => {
   const getUniqueClients = () => {
   const yearInvoicesAll = invoices
     .filter(inv => getYear(inv.invoiceDate) === selectedYear)
-    .filter(inv => (((inv as any).currency || 'USD') as Currency) === selectedCurrency);
+    .filter(inv => (inv.currency || 'USD') === selectedCurrency);
     if (selectedInstructorId === 'all') return new Set(yearInvoicesAll.map(inv => inv.clientId)).size;
   const yearCoursesAll = courses
     .filter(course => getYear(course.startDate) === selectedYear)
-    .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
+    .filter(course => (course.currency || 'USD') === selectedCurrency);
     const yearCourses = yearCoursesAll.filter(c => c.instructorId === selectedInstructorId);
     const yearCourseIds = new Set(yearCourses.map(c => c.id));
     const filteredInv = yearInvoicesAll.filter(inv => inv.courseIds?.some(id => yearCourseIds.has(id)));
@@ -407,7 +433,7 @@ const InvoiceAnalytics: React.FC = () => {
   const getTotalCourses = () => {
   const yearCoursesAll = courses
     .filter(course => getYear(course.startDate) === selectedYear)
-    .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency);
+    .filter(course => (course.currency || 'USD') === selectedCurrency);
     if (selectedInstructorId === 'all') return yearCoursesAll.length;
     return yearCoursesAll.filter(c => c.instructorId === selectedInstructorId).length;
   };
@@ -415,7 +441,7 @@ const InvoiceAnalytics: React.FC = () => {
   const getExpectedBillingTotal = () => {
     const filtered = courses
       .filter(course => getYear(course.startDate) === selectedYear)
-      .filter(course => (((course as any).currency || 'USD') as Currency) === selectedCurrency)
+      .filter(course => (course.currency || 'USD') === selectedCurrency)
       .filter(course => (selectedInstructorId === 'all') || course.instructorId === selectedInstructorId)
       .filter(course => course.status === 'creado' || course.status === 'dictado');
     return filtered.reduce((sum, course) => sum + course.totalValue, 0);
@@ -711,12 +737,12 @@ const InvoiceAnalytics: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {analytics.overdueInvoices.map((invoice, index) => (
-                  <tr key={index} className="hover:bg-red-50">
+                {analytics.overdueInvoices.map(invoice => (
+                  <tr key={invoice.invoiceId} className="hover:bg-red-50">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.invoiceNumber}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{invoice.clientName}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{formatMoney(invoice.amount)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{new Date(invoice.dueDate).toLocaleDateString('es-ES')}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{formatDate(invoice.dueDate)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
                         invoice.daysOverdue > 60 ? 'bg-red-100 text-red-800' :
@@ -735,7 +761,7 @@ const InvoiceAnalytics: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-right">
                       <button
-                        onClick={() => handleViewOverdueInvoice(invoice.invoiceId)}
+                        onClick={() => handleViewInvoice(invoice.invoiceId)}
                         className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"
                         title="Ver factura"
                         aria-label="Ver factura"
@@ -748,6 +774,72 @@ const InvoiceAnalytics: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Sección de Facturas Pendientes de Pago */}
+      {analytics.pendingInvoices.length > 0 && (
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <div className="flex items-center mb-4">
+            <div className="w-3 h-3 bg-amber-500 rounded-full mr-2"></div>
+            <h3 className="text-lg font-semibold text-amber-900">
+              Facturas Pendientes de Pago ({analytics.pendingInvoices.length})
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-amber-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-amber-900 uppercase tracking-wider">Factura</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-amber-900 uppercase tracking-wider">Cliente</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-amber-900 uppercase tracking-wider">Monto</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-amber-900 uppercase tracking-wider">Fecha estimada de pago</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-amber-900 uppercase tracking-wider">Tiempo restante</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-amber-900 uppercase tracking-wider">Estado</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-amber-900 uppercase tracking-wider">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {analytics.pendingInvoices.map(invoice => (
+                  <tr key={invoice.invoiceId} className="hover:bg-amber-50">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.invoiceNumber}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{invoice.clientName}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{formatMoney(invoice.amount)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-amber-900">{formatDate(invoice.expectedPaymentDate)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800">
+                        {invoice.daysUntilPayment === 0
+                          ? 'Hoy'
+                          : invoice.daysUntilPayment === 1
+                            ? 'Mañana'
+                            : `En ${invoice.daysUntilPayment} días`}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                        invoice.status === 'sent' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {invoice.status === 'sent' ? 'Enviada' : 'Borrador'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-right">
+                      <button
+                        onClick={() => handleViewInvoice(invoice.invoiceId)}
+                        className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"
+                        title="Ver factura"
+                        aria-label="Ver factura"
+                      >
+                        <Eye size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            Fecha estimada = fecha de factura + términos de pago. Las facturas vencidas se muestran en la sección anterior.
+          </p>
         </div>
       )}
 
@@ -850,4 +942,4 @@ const InvoiceAnalytics: React.FC = () => {
   );
 };
 
-export default InvoiceAnalytics; 
+export default InvoiceAnalytics;
